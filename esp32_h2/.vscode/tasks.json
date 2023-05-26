@@ -1,0 +1,41 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "🏗️ | Build",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 build",
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			}
+		},
+		{
+			"label": "🎯 | Set Target",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py --preview set-target esp32h2",
+			"problemMatcher": []
+		},
+		{
+			"label": "📸 | Flash",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 flash"
+		},
+		{
+			"label": "👁️ | Monitor",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 monitor"
+		},
+		{
+			"label": "📸 & 👁️ | Flash & Monitor",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 flash monitor"
+		},
+		{
+			"label": "🧼 | Clean",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 clean"
+		}
+	]
+}
