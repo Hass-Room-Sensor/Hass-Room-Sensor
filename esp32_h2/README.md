@@ -23,3 +23,9 @@ Follow the following guide to install the standard toolchain: https://docs.espre
 Once the ESP-IDF is installed open this directory with Visual Studio Code.
 By default, there are already tasks configured for building, flashing, and monitoring.
 Execute them and you are ready to go!
+
+## Misc
+
+### ESP32-H2-DevKitM-1
+
+Documentation: https://espressif-docs.readthedocs-hosted.com/projects/esp-dev-kits/en/latest/esp32h2/esp32-h2-devkitm-1/user_guide.html
