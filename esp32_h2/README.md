@@ -1,0 +1,25 @@
+# ESP32 H2 Code
+
+This directory contains all code for reading the [SCD41 CO2 Sensor](https://sensirion.com/products/catalog/SCD41/) and pushing the data to [Home Assistant](https://www.home-assistant.io/).
+
+The goal is to support pushing data to Home Assistant via multiple different interfaces.
+
+| Interface       | Status | Notes |
+|-----------------|--------|-------|
+| MQTT            | TODO   |       |
+| REST            | TODO   |       |
+| ZigBee          | TODO   |       |
+| Thread (Matter) | TODO   |       |
+
+## Building
+
+### ESP-IDF
+
+For building the [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites) is required.
+Follow the following guide to install the standard toolchain: https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites
+
+### Visual Studio Code
+
+Once the ESP-IDF is installed open this directory with Visual Studio Code.
+By default, there are already tasks configured for building, flashing, and monitoring.
+Execute them and you are ready to go!
