@@ -3,6 +3,9 @@
 #include "hal/gpio_types.h"
 #include "sensors/Scd41.hpp"
 
+#include "hal/gpio_types.h"
+#include "hal/i2c_types.h"
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -13,16 +16,27 @@ const char* TAG = "hassSensor";
 }  // namespace
 
 void mainLoop() {
-    sensors::Scd41 scd41;
+    sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_22, GPIO_NUM_12);
     actuators::RgbLed rgbLed(GPIO_NUM_8);
     ESP_LOGI(TAG, "Everything initialized.");
 
+    std::array<uint8_t, 9> data;
     while (true) {
-        for (size_t i = 0; i < 360 * 10; i++) {
-            double hue = static_cast<double>(i) / 3600;
-            rgbLed.on(hue);
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (scd41.is_ready()) {
+            scd41.read_measurement(data);
+            std::cout << "Data ready: ";
+            for (const uint8_t d : data) {
+                std::cout << d << ", ";
+            }
+            std::cout << std::endl;
         }
+
+        // for (size_t i = 0; i < 360 * 10; i++) {
+        //     double hue = static_cast<double>(i) / 3600;
+        //     rgbLed.on(hue);
+        //     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // }
     }
 }
 

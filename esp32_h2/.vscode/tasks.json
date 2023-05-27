@@ -5,11 +5,7 @@
 			"label": "🏗️ | Build",
 			"type": "shell",
 			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 build",
-			"group": "build",
-			"presentation": {
-				"reveal": "always",
-				"panel": "new"
-			}
+			"group": "build"
 		},
 		{
 			"label": "🎯 | Set Target",
