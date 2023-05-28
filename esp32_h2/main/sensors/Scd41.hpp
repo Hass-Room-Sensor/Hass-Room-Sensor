@@ -8,9 +8,16 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace sensors {
+struct measurement_t {
+    uint16_t co2;
+    double temp;
+    double hum;
+} __attribute__((aligned(32)));
+
 /**
  * Specification: https://sensirion.com/media/documents/48C4B7FB/6426E14D/CD_DS_SCD40_SCD41_Datasheet_D1_052023.pdf
  **/
@@ -35,7 +42,7 @@ class Scd41 {
 
     [[nodiscard]] bool init() const;
 
-    [[nodiscard]] bool read_measurement(std::span<uint16_t, 3> response) const;
+    [[nodiscard]] std::optional<measurement_t> read_measurement() const;
     [[nodiscard]] bool get_data_ready_status() const;
     [[nodiscard]] bool start_periodic_measurement() const;
     [[nodiscard]] bool stop_periodic_measurement() const;
@@ -50,5 +57,7 @@ class Scd41 {
 
     [[nodiscard]] bool write(uint16_t reg, std::chrono::milliseconds timeout) const;
     [[nodiscard]] bool write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::milliseconds timeout) const;
+
+    static measurement_t convert_measurement(std::span<uint16_t, 3> data);
 };
 }  // namespace sensors

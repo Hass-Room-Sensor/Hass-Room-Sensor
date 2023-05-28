@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <thread>
 
 namespace {
@@ -33,13 +34,14 @@ void mainLoop() {
     ESP_LOGI(TAG, "Everything initialized.");
     rgbLed.on(actuators::color_t{0, 30, 0});
 
-    std::array<uint16_t, 3> data;
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (scd41.get_data_ready_status()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             ESP_LOGI(TAG, "Data ready. Reading...");
-            if (scd41.read_measurement(data)) {
+            std::optional<sensors::measurement_t> measurement = scd41.read_measurement();
+            if (measurement) {
+                ESP_LOGI(TAG, "[Measurement]: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
             }
         }
     }

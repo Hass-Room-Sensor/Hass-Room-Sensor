@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <thread>
@@ -92,7 +93,7 @@ bool Scd41::validate_transform_received_data(const std::span<uint8_t> input, std
 
     size_t dataIndex = 0;
     for (size_t i = 0; i < input.size(); i += 3) {
-        ESP_LOGI(TAG, "input[%d] = '0x%02x', input[%d] = '0x%02x', input[%d] = '0x%02x'", i, input[i], i + 1, input[i + 1], i + 2, input[i + 2]);
+        ESP_LOGD(TAG, "input[%d] = '0x%02x', input[%d] = '0x%02x', input[%d] = '0x%02x'", i, input[i], i + 1, input[i + 1], i + 2, input[i + 2]);
 
         uint8_t crc = calc_crc(input.subspan(i, 2));
         if (crc != input[i + 2]) {
@@ -196,18 +197,22 @@ bool Scd41::stop_periodic_measurement() const {
     }
 }
 
-bool Scd41::read_measurement(std::span<uint16_t, 3> response) const {
-    return write_read(0xec05, response, std::chrono::milliseconds(10));
+std::optional<measurement_t> Scd41::read_measurement() const {
+    std::array<uint16_t, 3> data{};
+    if (!write_read(0xec05, data, std::chrono::milliseconds(10))) {
+        return std::nullopt;
+    }
+    return convert_measurement(data);
 }
 
 bool Scd41::get_data_ready_status() const {
     std::array<uint16_t, 1> response{};
     if (!write_read(0xe4b8, response, std::chrono::milliseconds(1))) {
-        ESP_LOGI(TAG, "Failed to check if device is ready.");
+        ESP_LOGE(TAG, "Failed to check if device is ready.");
         return false;
     }
 
-    ESP_LOGI(TAG, "Is ready response: 0x%02x", response[0]);
+    ESP_LOGD(TAG, "Is ready response: 0x%02x", response[0]);
     return (response[0] & ((static_cast<uint64_t>(1) << 12) - 1)) != 0;
 }
 
@@ -251,5 +256,13 @@ uint8_t Scd41::calc_crc(const std::span<uint8_t> data) {
         }
     }
     return crc;
+}
+
+measurement_t Scd41::convert_measurement(std::span<uint16_t, 3> data) {
+    uint16_t co2 = data[0];
+    double temp = -45.0 + 175.0 * static_cast<double>(data[1]) / static_cast<double>((2 << 16) - 1);
+    double hum = 100 * static_cast<double>(data[2]) / static_cast<double>((2 << 16) - 1);
+
+    return {co2, temp, hum};
 }
 }  // namespace sensors
