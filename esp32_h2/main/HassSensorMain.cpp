@@ -17,8 +17,10 @@ const char* TAG = "hassSensor";
 }  // namespace
 
 void mainLoop() {
-    sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_22, GPIO_NUM_12);
-    if (scd41.init()) {
+    esp_log_set_level_master(ESP_LOG_VERBOSE);
+
+    sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
+    if (!scd41.init()) {
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
@@ -30,12 +32,9 @@ void mainLoop() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (scd41.is_ready()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            ESP_LOGI(TAG, "Data ready. Reading...");
             if (scd41.read_measurement(data)) {
-                std::cout << "Data ready: ";
-                for (const uint8_t d : data) {
-                    std::cout << d << ", ";
-                }
-                std::cout << std::endl;
             }
         }
 

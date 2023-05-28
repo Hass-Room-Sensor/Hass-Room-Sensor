@@ -45,13 +45,10 @@ class Scd41 {
  private:
     static uint8_t calc_crc(const std::span<uint8_t> data);
 
-    static void prepare_data_to_send(const std::span<uint16_t> data, std::span<uint8_t> dataPrepared);
-    static bool prepare_received_data(const std::span<uint8_t> dataReceived, std::span<uint16_t> data);
+    static void transform_to_send_data(const std::span<uint16_t> data, std::span<uint8_t> dataPrepared);
+    static bool validate_transform_received_data(const std::span<uint8_t> dataReceived, std::span<uint16_t> data);
 
-    [[nodiscard]] bool write(uint16_t data, std::chrono::milliseconds timeout) const;
-    [[nodiscard]] bool write(const std::span<uint16_t> data, std::chrono::milliseconds timeout) const;
-
-    [[nodiscard]] bool write_read(uint16_t data, std::span<uint16_t> response, std::chrono::milliseconds timeout) const;
-    [[nodiscard]] bool write_read(const std::span<uint16_t> data, std::span<uint16_t> response, std::chrono::milliseconds timeout) const;
+    [[nodiscard]] bool write(uint16_t reg, std::chrono::milliseconds timeout) const;
+    [[nodiscard]] bool write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::milliseconds timeout) const;
 };
 }  // namespace sensors
