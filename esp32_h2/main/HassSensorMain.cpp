@@ -6,6 +6,7 @@
 #include "hal/gpio_types.h"
 #include "hal/i2c_types.h"
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -17,19 +18,25 @@ const char* TAG = "hassSensor";
 
 void mainLoop() {
     sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_22, GPIO_NUM_12);
+    if (scd41.init()) {
+        ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
+        esp_restart();
+    }
+
     actuators::RgbLed rgbLed(GPIO_NUM_8);
     ESP_LOGI(TAG, "Everything initialized.");
 
-    std::array<uint8_t, 9> data;
+    std::array<uint16_t, 3> data;
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (scd41.is_ready()) {
-            scd41.read_measurement(data);
-            std::cout << "Data ready: ";
-            for (const uint8_t d : data) {
-                std::cout << d << ", ";
+            if (scd41.read_measurement(data)) {
+                std::cout << "Data ready: ";
+                for (const uint8_t d : data) {
+                    std::cout << d << ", ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
         }
 
         // for (size_t i = 0; i < 360 * 10; i++) {
