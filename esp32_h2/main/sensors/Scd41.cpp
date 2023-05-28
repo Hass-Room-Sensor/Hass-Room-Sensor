@@ -56,12 +56,6 @@ bool Scd41::init() const {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    // Get the serial number to validate everything works:
-    if (!get_serial_number()) {
-        return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
     if (!start_periodic_measurement()) {
         return false;
     }
