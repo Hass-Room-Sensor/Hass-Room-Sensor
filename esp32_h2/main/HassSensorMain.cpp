@@ -19,14 +19,19 @@ const char* TAG = "hassSensor";
 void mainLoop() {
     esp_log_set_level_master(ESP_LOG_VERBOSE);
 
+    actuators::RgbLed rgbLed(GPIO_NUM_8);
+    // Sleep 100ms so the LED is initialized and ready for the next command
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    rgbLed.on(actuators::color_t{0, 0, 30});
+
     sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
     if (!scd41.init()) {
+        rgbLed.on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
-
-    actuators::RgbLed rgbLed(GPIO_NUM_8);
     ESP_LOGI(TAG, "Everything initialized.");
+    rgbLed.on(actuators::color_t{0, 30, 0});
 
     std::array<uint16_t, 3> data;
     while (true) {
