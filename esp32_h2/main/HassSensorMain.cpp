@@ -42,12 +42,6 @@ void mainLoop() {
             if (scd41.read_measurement(data)) {
             }
         }
-
-        // for (size_t i = 0; i < 360 * 10; i++) {
-        //     double hue = static_cast<double>(i) / 3600;
-        //     rgbLed.on(hue);
-        //     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        // }
     }
 }
 
