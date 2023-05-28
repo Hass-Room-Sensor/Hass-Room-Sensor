@@ -31,7 +31,7 @@ void mainLoop() {
     std::array<uint16_t, 3> data;
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (scd41.is_ready()) {
+        if (scd41.get_data_ready_status()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             ESP_LOGI(TAG, "Data ready. Reading...");
             if (scd41.read_measurement(data)) {

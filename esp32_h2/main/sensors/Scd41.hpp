@@ -36,9 +36,9 @@ class Scd41 {
     [[nodiscard]] bool init() const;
 
     [[nodiscard]] bool read_measurement(std::span<uint16_t, 3> response) const;
-    [[nodiscard]] bool is_ready() const;
-    [[nodiscard]] bool start_measurement() const;
-    [[nodiscard]] bool stop_measurement() const;
+    [[nodiscard]] bool get_data_ready_status() const;
+    [[nodiscard]] bool start_periodic_measurement() const;
+    [[nodiscard]] bool stop_periodic_measurement() const;
     [[nodiscard]] bool perform_self_test() const;
     [[nodiscard]] uint64_t get_serial_number() const;
 

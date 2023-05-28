@@ -45,7 +45,7 @@ bool Scd41::init() const {
     ESP_LOGI(TAG, "Idle state reached.");
 
     // Stop all existing measurements:
-    if (!stop_measurement()) {
+    if (!stop_periodic_measurement()) {
         return false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -62,7 +62,7 @@ bool Scd41::init() const {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    if (!start_measurement()) {
+    if (!start_periodic_measurement()) {
         return false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -72,7 +72,7 @@ bool Scd41::init() const {
 }
 
 Scd41::~Scd41() {
-    (void) stop_measurement();
+    (void) stop_periodic_measurement();
 }
 
 void Scd41::transform_to_send_data(const std::span<uint16_t> input, std::span<uint8_t> output) {
@@ -180,7 +180,7 @@ bool Scd41::write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::
     return validate_transform_received_data(tmpResponse, response);
 }
 
-bool Scd41::start_measurement() const {
+bool Scd41::start_periodic_measurement() const {
     ESP_LOGI(TAG, "Starting measurement...");
     if (write(0x21b1, std::chrono::milliseconds(10))) {
         ESP_LOGI(TAG, "Measurement started.");
@@ -191,7 +191,7 @@ bool Scd41::start_measurement() const {
     }
 }
 
-bool Scd41::stop_measurement() const {
+bool Scd41::stop_periodic_measurement() const {
     ESP_LOGI(TAG, "Stopping measurement...");
     if (write(0x3f86, std::chrono::milliseconds(500))) {
         ESP_LOGI(TAG, "Measurement stopped.");
@@ -206,7 +206,7 @@ bool Scd41::read_measurement(std::span<uint16_t, 3> response) const {
     return write_read(0xec05, response, std::chrono::milliseconds(10));
 }
 
-bool Scd41::is_ready() const {
+bool Scd41::get_data_ready_status() const {
     std::array<uint16_t, 1> response{};
     if (!write_read(0xe4b8, response, std::chrono::milliseconds(1))) {
         ESP_LOGI(TAG, "Failed to check if device is ready.");
