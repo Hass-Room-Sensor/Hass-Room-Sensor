@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 idf_component_register(SRCS "HassSensorMain.cpp"
                             "sensors/Scd41.hpp"
                             "sensors/Scd41.cpp"
+                            "actuators/RgbLed.hpp"
                             "actuators/RgbLed.cpp"
-                            "actuators/RgbLed.cpp"
+                            "zigbee/ZDevice.hpp"
+                            "zigbee/ZDevice.cpp"
                        INCLUDE_DIRS ".")

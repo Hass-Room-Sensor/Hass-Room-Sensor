@@ -1,24 +1,28 @@
 #include "actuators/RgbLed.hpp"
 #include "esp_log.h"
 #include "hal/gpio_types.h"
-#include "sensors/Scd41.hpp"
-
-#include "hal/gpio_types.h"
 #include "hal/i2c_types.h"
+#include "nvs_flash.h"
+#include "sensors/Scd41.hpp"
+#include "zigbee/ZDevice.hpp"
 #include <array>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <thread>
 
 namespace {
 const char* TAG = "hassSensor";
-}  // namespace
+} // namespace
 
 void mainLoop() {
     esp_log_set_level_master(ESP_LOG_VERBOSE);
+
+    // Initialize the flash:
+    ESP_ERROR_CHECK(nvs_flash_init());
 
     // Initialize the LED:
     actuators::RgbLed rgbLed(GPIO_NUM_8);
@@ -32,6 +36,10 @@ void mainLoop() {
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
+
+    // Setup ZigBee device:
+    zigbee::ZDevice::get_instance()->init();
+
     ESP_LOGI(TAG, "Everything initialized.");
     rgbLed.on(actuators::color_t{0, 30, 0});
 
