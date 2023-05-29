@@ -1,13 +1,13 @@
 #include "actuators/RgbLed.hpp"
 #include "driver/gpio.h"
 #include "hal/gpio_types.h"
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <thread>
 
 namespace actuators {
-RgbLed::RgbLed(gpio_num_t gpio) : gpio(gpio) {
-    init();
-}
+RgbLed::RgbLed(gpio_num_t gpio) : gpio(gpio) {}
 
 void RgbLed::init() {
     gpio_reset_pin(gpio);
@@ -27,6 +27,9 @@ void RgbLed::init() {
 
     // Set all LED off to clear all pixels:
     led_strip_clear(led_strip);
+
+    // Sleep 100ms so the LED is initialized and ready for the next command
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
 void RgbLed::on(color_t color) {

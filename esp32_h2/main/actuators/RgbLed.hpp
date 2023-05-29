@@ -24,12 +24,13 @@ class RgbLed {
     RgbLed& operator=(const RgbLed&) = default;
     ~RgbLed() = default;
 
+    void init();
+
     void on(color_t color);
     void on(double hue);
     void off();
 
  private:
-    void init();
     static color_t hueToRgb(double hue);
 };
 }  // namespace actuators
