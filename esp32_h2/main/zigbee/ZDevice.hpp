@@ -2,11 +2,16 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace zigbee {
 class ZDevice {
   public:
     static const char* TAG;
+
+    std::string manufacturerName = " DOOP";
+    std::string modelName = "HASS_Sensor";
+    std::string version = "0.1.0_alpha";
 
   private:
     static constexpr int ENDPOINT_ID = 10;

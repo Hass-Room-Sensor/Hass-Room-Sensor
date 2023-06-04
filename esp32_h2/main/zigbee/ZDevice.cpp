@@ -1,12 +1,14 @@
 #include "zigbee/ZDevice.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
 #include "esp_zigbee_core.h"
 #include "esp_zigbee_type.h"
 #include "freertos/task.h"
 #include "ha/esp_zigbee_ha_standard.h"
 #include "zb_config_platform.h"
+#include "zcl/esp_zigbee_zcl_basic.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zdo/esp_zigbee_zdo_common.h"
 #include <array>
@@ -46,10 +48,22 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     esp_zb_init(&zb_nwk_cfg);
 
     // Clusters:
+
+    // Temperature:
     esp_zb_temperature_sensor_cfg_t tempCfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
     esp_zb_cluster_list_t* clusterList = esp_zb_temperature_sensor_clusters_create(&tempCfg);
 
+    // Basic information:
+    esp_zb_basic_cluster_cfg_t cfg;
+    cfg.power_source = ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE;
+    cfg.zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE;
+    esp_zb_attribute_list_t* basicAttrList = esp_zb_basic_cluster_create(&cfg);
+    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, ZDevice::get_instance()->manufacturerName.data());
+    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_PRODUCT_LABEL_ID, ZDevice::get_instance()->modelName.data());
+    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_VERSION_DETAILS_ID, ZDevice::get_instance()->version.data());
+    esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
+    // Humidity:
     esp_zb_humidity_meas_cluster_cfg_t humCfg{};
     humCfg.min_value = 0;
     humCfg.max_value = 100;
