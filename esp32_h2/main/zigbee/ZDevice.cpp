@@ -12,8 +12,9 @@
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zdo/esp_zigbee_zdo_common.h"
 #include <array>
+#include <cassert>
 #include <chrono>
-#include <cstdint>
+#include <vector>
 
 namespace zigbee {
 const char* ZDevice::TAG = "ZDevice";
@@ -36,6 +37,27 @@ void ZDevice::init() {
     ESP_LOGI(TAG, "ZigBee device initialized.");
 }
 
+void ZDevice::set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId) {
+    assert(basicAttrStr.length() <= 0xFF);
+    // The first byte of the attribute string is the length of the following string.
+    // Source: https://github.com/espressif/esp-idf/issues/10662#issuecomment-1424903170
+    basicAttrStrCache.push_back(static_cast<char>(basicAttrStr.length()));
+    basicAttrStrCache.insert(basicAttrStrCache.end(), basicAttrStr.begin(), basicAttrStr.end());
+    esp_zb_basic_cluster_add_attr(basicAttrList, attrId, basicAttrStrCache.data());
+}
+
+void ZDevice::set_model_id(const std::string& modelIdStr) {
+    set_basic_attr(modelIdStr, modelId, ESP_ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID);
+}
+
+void ZDevice::set_manufacturer(const std::string& manufacturerStr) {
+    set_basic_attr(manufacturerStr, manufacturer, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID);
+}
+
+void ZDevice::set_version_details(const std::string& versionStr) {
+    set_basic_attr(versionStr, version, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_VERSION_DETAILS_ID);
+}
+
 void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "ZigBee task started.");
 
@@ -54,13 +76,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     esp_zb_cluster_list_t* clusterList = esp_zb_temperature_sensor_clusters_create(&tempCfg);
 
     // Basic information:
-    esp_zb_basic_cluster_cfg_t cfg;
-    cfg.power_source = ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE;
-    cfg.zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE;
-    esp_zb_attribute_list_t* basicAttrList = esp_zb_basic_cluster_create(&cfg);
-    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, ZDevice::get_instance()->manufacturerName.data());
-    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_PRODUCT_LABEL_ID, ZDevice::get_instance()->modelName.data());
-    esp_zb_basic_cluster_add_attr(basicAttrList, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_VERSION_DETAILS_ID, ZDevice::get_instance()->version.data());
+    esp_zb_attribute_list_t* basicAttrList = ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "0.1.0");
     esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     // Humidity:
@@ -96,6 +112,17 @@ void ZDevice::on_attr_changed(uint8_t status, uint8_t endpoint, uint16_t cluster
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
+}
+
+esp_zb_attribute_list_t* ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr) {
+    // Ensure this is called only once
+    assert(!basicAttrList);
+
+    basicAttrList = esp_zb_basic_cluster_create(&basicClusterConfig);
+    set_model_id(modelIdStr);
+    set_manufacturer(manufacturerStr);
+    set_version_details(versionStr);
+    return basicAttrList;
 }
 } // namespace zigbee
 
