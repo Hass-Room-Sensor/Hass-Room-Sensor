@@ -6,6 +6,7 @@
 #include "zcl/esp_zigbee_zcl_basic.h"
 #include <memory>
 #include <string>
+#include <sys/_stdint.h>
 #include <vector>
 
 namespace zigbee {
@@ -16,8 +17,23 @@ class ZDevice {
   private:
     static constexpr int ENDPOINT_ID = 10;
 
+    /**
+     * The ZigBee spec defines the power source (8 bits) in "3.2.2.2.8 PowerSource Attribute".
+     * https://zigbeealliance.org/wp-content/uploads/2019/12/07-5123-06-zigbee-cluster-library-specification.pdf
+     * Bit | Value
+     * 0x0 | Unknown
+     * 0x1 | Mains (single phase)
+     * 0x2 | Mains (3 phases)
+     * 0x3 | Battery
+     * 0x4 | DC source
+     * 0x5 | Emergency mains constantly powered
+     * 0x6 | Emergency mains and transfer switch
+     * 0x7 | Has a secondary power backup.
+     **/
+    static constexpr uint8_t POWER_SOURCE = 0b00001000; // Bit 0x4 is set to indicate DC source
+
     // Basic cluster information:
-    esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, ESP_ZB_ZCL_BASIC_POWER_SOURCE_DEFAULT_VALUE};
+    esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, POWER_SOURCE};
     esp_zb_attribute_list_t* basicAttrList{nullptr};
 
     std::vector<char> modelId;
