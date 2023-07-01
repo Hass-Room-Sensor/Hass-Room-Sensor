@@ -52,6 +52,7 @@ void mainLoop() {
             std::optional<sensors::measurement_t> measurement = scd41.read_measurement();
             if (measurement) {
                 ESP_LOGI(TAG, "[Measurement]: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
+                zigbee::ZDevice::get_instance()->update_temp(measurement->temp);
             }
         }
     }

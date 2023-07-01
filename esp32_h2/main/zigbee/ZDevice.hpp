@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "esp_zigbee_type.h"
+#include "ha/esp_zigbee_ha_standard.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
 #include <memory>
 #include <string>
@@ -41,6 +42,10 @@ class ZDevice {
     std::vector<char> version;
 
     // Temperature cluster information:
+    esp_zb_temperature_sensor_cfg_t tempCfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
+    esp_zb_cluster_list_t* tempClusterList{nullptr};
+    esp_zb_attribute_list_t* tempAttrList{nullptr};
+    int16_t curTemp{-1};
 
     // Humidity cluster information:
 
@@ -59,6 +64,9 @@ class ZDevice {
     static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask);
 
     esp_zb_attribute_list_t* setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
+    esp_zb_cluster_list_t* setup_temp_cluster(double temp);
+
+    void update_temp(double temp);
 
   private:
     static void zb_main_task(void* arg);
