@@ -70,7 +70,7 @@ class ZDevice {
 
   private:
     static void zb_main_task(void* arg);
-    static void on_attr_changed(uint8_t status, uint8_t endpoint, uint16_t clusterId, uint16_t attrId, void* newVal);
+    static int on_attr_changed(esp_zb_zcl_set_attr_value_message_s msg);
 
     void set_model_id(const std::string& modelIdStr);
     void set_manufacturer(const std::string& manufacturerStr);

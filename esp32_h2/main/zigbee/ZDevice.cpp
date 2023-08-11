@@ -110,8 +110,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "ZigBee task ended.");
 }
 
-void ZDevice::on_attr_changed(uint8_t status, uint8_t endpoint, uint16_t clusterId, uint16_t attrId, void* /*newVal*/) {
-    ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, ", status, endpoint, clusterId, attrId);
+int ZDevice::on_attr_changed(esp_zb_zcl_set_attr_value_message_s msg) {
+    ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, ", msg.info.status, msg.info.dst_endpoint, msg.info.cluster, msg.attribute);
+    return 0; // Not handled
 }
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
