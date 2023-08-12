@@ -8,7 +8,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 |-----------------|--------|-------|
 | MQTT            | TODO   |       |
 | REST            | TODO   |       |
-| ZigBee          | TODO   |       |
+| ZigBee          | Supported | Temperature and Humidity |
 | Thread (Matter) | TODO   |       |
 
 ## Building
