@@ -48,6 +48,10 @@ class ZDevice {
     int16_t curTemp{-1};
 
     // Humidity cluster information:
+    esp_zb_humidity_meas_cluster_cfg_t humCfg{};
+    esp_zb_cluster_list_t* humClusterList{nullptr};
+    esp_zb_attribute_list_t* humAttrList{nullptr};
+    int16_t curHum{-1};
 
   public:
     ZDevice() = default;
@@ -59,14 +63,16 @@ class ZDevice {
 
     static const std::unique_ptr<ZDevice>& get_instance();
 
-    void init();
+    void init(double temp, double hum);
 
     static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask);
 
     esp_zb_attribute_list_t* setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
-    esp_zb_cluster_list_t* setup_temp_cluster(double temp);
+    esp_zb_cluster_list_t* setup_temp_cluster();
+    esp_zb_attribute_list_t* setup_hum_cluster();
 
     void update_temp(double temp);
+    void update_hum(double hum);
 
   private:
     static void zb_main_task(void* arg);

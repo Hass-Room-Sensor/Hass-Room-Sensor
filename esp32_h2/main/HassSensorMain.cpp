@@ -37,23 +37,39 @@ void mainLoop() {
         esp_restart();
     }
 
-    // Setup ZigBee device:
-    zigbee::ZDevice::get_instance()->init();
+    // Setup ZigBee device with initial measurements:
+    std::optional<sensors::measurement_t> measurement = std::nullopt;
+    do {
+        if (scd41.get_data_ready_status()) {
+            measurement = scd41.read_measurement();
+            if (measurement) {
+                ESP_LOGI(TAG, "Initial measurement: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
+                zigbee::ZDevice::get_instance()->init(measurement->temp, measurement->hum);
+            }
+        } else {
+            ESP_LOGI(TAG, "Waiting for initial measurements. SCD41 is not ready yet. Sleeping for a second before rechecking...");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    } while (!measurement);
 
     ESP_LOGI(TAG, "Everything initialized.");
     rgbLed.on(actuators::color_t{0, 30, 0});
 
     // Main loop:
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (scd41.get_data_ready_status()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             ESP_LOGI(TAG, "Data ready. Reading...");
             std::optional<sensors::measurement_t> measurement = scd41.read_measurement();
             if (measurement) {
                 ESP_LOGI(TAG, "[Measurement]: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
                 zigbee::ZDevice::get_instance()->update_temp(measurement->temp);
+                zigbee::ZDevice::get_instance()->update_hum(measurement->hum);
+                std::this_thread::sleep_for(std::chrono::seconds(10)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
     }
 }

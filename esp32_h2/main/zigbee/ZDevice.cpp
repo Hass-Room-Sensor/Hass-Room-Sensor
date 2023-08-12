@@ -9,7 +9,9 @@
 #include "ha/esp_zigbee_ha_standard.h"
 #include "zb_config_platform.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
+#include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
+#include "zcl/esp_zigbee_zcl_humidity_meas.h"
 #include "zcl/esp_zigbee_zcl_temperature_meas.h"
 #include "zdo/esp_zigbee_zdo_common.h"
 #include <array>
@@ -25,8 +27,12 @@ const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
     return instance;
 }
 
-void ZDevice::init() {
+void ZDevice::init(double temp, double hum) {
     ESP_LOGI(TAG, "Initializing ZigBee device...");
+
+    // Set initial measurements
+    curTemp = static_cast<int16_t>(temp * 100);
+    curHum = static_cast<int16_t>(hum * 100);
 
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = RADIO_MODE_NATIVE;
@@ -60,9 +66,13 @@ void ZDevice::set_version_details(const std::string& versionStr) {
 }
 
 void ZDevice::update_temp(double temp) {
-    curTemp = static_cast<int16_t>((temp + 20) * 100); // Temperature values are multiplied by 100 to avoid floating point numbers
-    ESP_ERROR_CHECK(esp_zb_cluster_update_attr(tempAttrList, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp)));
-    ESP_ERROR_CHECK(esp_zb_cluster_list_update_temperature_meas_cluster(tempClusterList, tempAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    curTemp = static_cast<int16_t>(temp * 100); // Temperature values are multiplied by 100 to avoid floating point numbers
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp), false);
+}
+
+void ZDevice::update_hum(double hum) {
+    curHum = static_cast<int16_t>(hum * 100); // Humidity values are multiplied by 100 to avoid floating point numbers
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {
@@ -79,16 +89,15 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     // Clusters:
 
     // Temperature:
-    esp_zb_cluster_list_t* tempClusterList = ZDevice::get_instance()->setup_temp_cluster(0);
+    esp_zb_cluster_list_t* tempClusterList = ZDevice::get_instance()->setup_temp_cluster();
 
     // Basic information:
-    esp_zb_attribute_list_t* basicAttrList = ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "0.1.0");
+    esp_zb_attribute_list_t* basicAttrList = ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
     esp_zb_cluster_list_update_basic_cluster(tempClusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     // Humidity:
-    esp_zb_humidity_meas_cluster_cfg_t humCfg{};
-    esp_zb_attribute_list_t* humAttrs = esp_zb_humidity_meas_cluster_create(&humCfg);
-    esp_zb_cluster_list_add_humidity_meas_cluster(tempClusterList, humAttrs, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    esp_zb_attribute_list_t* humAttrList = ZDevice::get_instance()->setup_hum_cluster();
+    esp_zb_cluster_list_add_humidity_meas_cluster(tempClusterList, humAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
     esp_zb_ep_list_add_ep(endpointList, tempClusterList, ENDPOINT_ID, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID);
@@ -130,15 +139,25 @@ esp_zb_attribute_list_t* ZDevice::setup_basic_cluster(const std::string& modelId
     return basicAttrList;
 }
 
-esp_zb_cluster_list_t* ZDevice::setup_temp_cluster(double temp) {
-    curTemp = static_cast<int16_t>((temp + 20) * 100); // Temperature values are multiplied by 100 to avoid floating point numbers
+esp_zb_cluster_list_t* ZDevice::setup_temp_cluster() {
     tempCfg.temp_meas_cfg.measured_value = curTemp;
     tempCfg.temp_meas_cfg.min_value = -40 * 100;
     tempCfg.temp_meas_cfg.max_value = 100 * 100;
+
     tempClusterList = esp_zb_temperature_sensor_clusters_create(&tempCfg);
     tempAttrList = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT);
     ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(tempAttrList, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp)));
     return tempClusterList;
+}
+
+esp_zb_attribute_list_t* ZDevice::setup_hum_cluster() {
+    humCfg.min_value = 0;
+    humCfg.max_value = 0;
+    humCfg.measured_value = curHum;
+
+    humAttrList = esp_zb_humidity_meas_cluster_create(&humCfg);
+    esp_zb_humidity_meas_cluster_add_attr(humAttrList, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum));
+    return humAttrList;
 }
 } // namespace zigbee
 
