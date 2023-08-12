@@ -105,12 +105,6 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     esp_zb_device_add_set_attr_value_cb(ZDevice::on_attr_changed);
 
-    // Set the device config:
-    // esp_zb_color_dimmable_light_cfg_t light_cfg = ESP_ZB_DEFAULT_COLOR_DIMMABLE_LIGHT_CONFIG();
-    // esp_zb_ep_list_t* esp_zb_color_dimmable_light_ep = esp_zb_color_dimmable_light_ep_create(ENDPOINT_ID, &light_cfg);
-    // esp_zb_device_register(esp_zb_color_dimmable_light_ep);
-    // esp_zb_device_add_set_attr_value_cb(ZDevice::on_attr_changed);
-
     // Advertise on all channels:
     esp_zb_set_primary_network_channel_set(0x07FFF800);
     ESP_ERROR_CHECK(esp_zb_start(false));
