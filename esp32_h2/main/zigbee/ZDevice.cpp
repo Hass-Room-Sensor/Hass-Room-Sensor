@@ -146,7 +146,7 @@ esp_zb_cluster_list_t* ZDevice::setup_temp_cluster() {
 
 esp_zb_attribute_list_t* ZDevice::setup_hum_cluster() {
     humCfg.min_value = 0;
-    humCfg.max_value = 0;
+    humCfg.max_value = 100;
     humCfg.measured_value = curHum;
 
     humAttrList = esp_zb_humidity_meas_cluster_create(&humCfg);
