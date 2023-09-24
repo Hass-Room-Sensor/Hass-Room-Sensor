@@ -103,7 +103,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     esp_zb_ep_list_add_ep(endpointList, tempClusterList, ENDPOINT_ID, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID);
     esp_zb_device_register(endpointList);
 
-    esp_zb_device_add_set_attr_value_cb(ZDevice::on_attr_changed);
+    esp_zb_core_action_handler_register(ZDevice::on_zb_action);
 
     // Advertise on all channels:
     esp_zb_set_primary_network_channel_set(0x07FFF800);
@@ -113,9 +113,21 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "ZigBee task ended.");
 }
 
-int ZDevice::on_attr_changed(esp_zb_zcl_set_attr_value_message_s msg) {
-    ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, ", msg.info.status, msg.info.dst_endpoint, msg.info.cluster, msg.attribute);
-    return 0; // Not handled
+esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message) {
+    switch (callback_id) {
+        case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
+            return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
+            break;
+        default:
+            ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
+            break;
+    }
+    return ESP_OK;
+}
+
+esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg) {
+    ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, attrTypeId: %d", msg->info.status, msg->info.dst_endpoint, msg->info.cluster, msg->attribute.id, msg->attribute.data.type);
+    return ESP_OK;
 }
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {

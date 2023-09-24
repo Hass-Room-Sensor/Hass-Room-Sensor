@@ -76,7 +76,8 @@ class ZDevice {
 
   private:
     static void zb_main_task(void* arg);
-    static int on_attr_changed(esp_zb_zcl_set_attr_value_message_s msg);
+    static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
+    static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
 
     void set_model_id(const std::string& modelIdStr);
     void set_manufacturer(const std::string& manufacturerStr);
