@@ -91,6 +91,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     // Temperature:
     esp_zb_cluster_list_t* tempClusterList = ZDevice::get_instance()->setup_temp_cluster();
 
+    // CO2:
+    // ZDevice::get_instance()->setup_co2_cluster();
+
     // Basic information:
     esp_zb_attribute_list_t* basicAttrList = ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
     esp_zb_cluster_list_update_basic_cluster(tempClusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
@@ -107,7 +110,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     // Advertise on all channels:
     esp_zb_set_primary_network_channel_set(0x07FFF800);
-    ESP_ERROR_CHECK(esp_zb_start(false));
+    ESP_ERROR_CHECK(esp_zb_start(true));
     esp_zb_main_loop_iteration();
 
     ESP_LOGI(TAG, "ZigBee task ended.");
@@ -131,6 +134,7 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
 }
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
+    ESP_LOGI(TAG, "Rejoining network...");
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
 }
 
@@ -165,6 +169,10 @@ esp_zb_attribute_list_t* ZDevice::setup_hum_cluster() {
     esp_zb_humidity_meas_cluster_add_attr(humAttrList, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum));
     return humAttrList;
 }
+
+void ZDevice::setup_co2_cluster() {
+    esp_zb_humidity_meas_cluster_add_attr(humAttrList, 0x5, static_cast<void*>(&curPpm));
+}
 } // namespace zigbee
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
@@ -184,7 +192,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
             } else {
                 /* commissioning failed */
-                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %d)", err_status);
+                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s)", esp_err_to_name(err_status));
             }
             break;
 

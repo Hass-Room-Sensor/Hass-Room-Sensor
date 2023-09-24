@@ -53,6 +53,8 @@ class ZDevice {
     esp_zb_attribute_list_t* humAttrList{nullptr};
     int16_t curHum{-1};
 
+    int16_t curPpm{-1};
+
   public:
     ZDevice() = default;
     ZDevice(ZDevice&&) = default;
@@ -70,6 +72,7 @@ class ZDevice {
     esp_zb_attribute_list_t* setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
     esp_zb_cluster_list_t* setup_temp_cluster();
     esp_zb_attribute_list_t* setup_hum_cluster();
+    void setup_co2_cluster();
 
     void update_temp(double temp);
     void update_hum(double hum);
