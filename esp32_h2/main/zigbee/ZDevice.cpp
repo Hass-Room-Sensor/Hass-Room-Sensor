@@ -1,6 +1,7 @@
 #include "zigbee/ZDevice.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
 #include "esp_zigbee_core.h"
@@ -21,6 +22,14 @@
 
 namespace zigbee {
 const char* ZDevice::TAG = "ZDevice";
+
+void ZDevice::set_led(std::shared_ptr<actuators::RgbLed> rgbLed) {
+    this->rgbLed = std::move(rgbLed);
+}
+
+void ZDevice::set_led_color(const actuators::color_t& color) {
+    rgbLed->on(color);
+}
 
 const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
     static const std::unique_ptr<ZDevice> instance = std::make_unique<ZDevice>();
@@ -134,6 +143,7 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
 }
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
+    zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
     ESP_LOGI(TAG, "Rejoining network...");
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
 }
@@ -181,6 +191,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
 
     switch (sig_type) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
+            zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
             ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized");
             esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
             break;
@@ -188,11 +199,14 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
         case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
         case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (err_status == ESP_OK) {
+                zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
                 ESP_LOGI(zigbee::ZDevice::TAG, "Start network steering");
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
             } else {
                 /* commissioning failed */
-                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s)", esp_err_to_name(err_status));
+                zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 0});
+                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s). Restarting...", esp_err_to_name(err_status));
+                esp_restart();
             }
             break;
 
@@ -200,8 +214,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             if (err_status == ESP_OK) {
                 esp_zb_ieee_addr_t extended_pan_id;
                 esp_zb_get_extended_pan_id(extended_pan_id);
+                zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 30, 0});
                 ESP_LOGI(zigbee::ZDevice::TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
             } else {
+                zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 20, 0});
                 ESP_LOGI(zigbee::ZDevice::TAG, "Network steering was not successful (status: %d)", err_status);
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             }

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "actuators/RgbLed.hpp"
 #include "esp_zigbee_type.h"
 #include "ha/esp_zigbee_ha_standard.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
@@ -55,6 +56,8 @@ class ZDevice {
 
     int16_t curPpm{-1};
 
+    std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
+
   public:
     ZDevice() = default;
     ZDevice(ZDevice&&) = default;
@@ -76,6 +79,8 @@ class ZDevice {
 
     void update_temp(double temp);
     void update_hum(double hum);
+    void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
+    void set_led_color(const actuators::color_t& color);
 
   private:
     static void zb_main_task(void* arg);

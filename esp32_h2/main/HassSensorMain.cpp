@@ -25,14 +25,15 @@ void mainLoop() {
     ESP_ERROR_CHECK(nvs_flash_init());
 
     // Initialize the LED:
-    actuators::RgbLed rgbLed(GPIO_NUM_8);
-    rgbLed.init();
-    rgbLed.on(actuators::color_t{0, 0, 30});
+    std::shared_ptr<actuators::RgbLed> rgbLed = std::make_shared<actuators::RgbLed>(GPIO_NUM_8);
+    rgbLed->init();
+    rgbLed->on(actuators::color_t{0, 0, 30});
+    zigbee::ZDevice::get_instance()->set_led(rgbLed);
 
     // Initialize the SCD41 sensor:
     sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
     if (!scd41.init()) {
-        rgbLed.on(actuators::color_t{30, 0, 0});
+        rgbLed->on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
@@ -53,7 +54,6 @@ void mainLoop() {
     } while (!measurement);
 
     ESP_LOGI(TAG, "Everything initialized.");
-    rgbLed.on(actuators::color_t{0, 30, 0});
 
     // Main loop:
     while (true) {
