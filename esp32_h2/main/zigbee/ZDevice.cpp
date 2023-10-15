@@ -19,6 +19,7 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <vector>
 
 namespace zigbee {
@@ -40,10 +41,12 @@ const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
 void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_LOGI(TAG, "Initializing ZigBee device...");
 
-    // Set initial measurements
+    // Set initial measurements. Values are multiplied by 100 to avoid floating point numbers.
     curTemp = static_cast<int16_t>(temp * 100);
     curHum = static_cast<int16_t>(hum * 100);
-    curCo2 = static_cast<int16_t>(co2);
+
+    // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
+    curCo2 = static_cast<float_t>(co2) / 1000000.0;
 
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = RADIO_MODE_NATIVE;
@@ -87,8 +90,8 @@ void ZDevice::update_hum(double hum) {
 }
 
 void ZDevice::update_co2(uint16_t co2) {
-    curHum = static_cast<int16_t>(co2);
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curHum), false);
+    curCo2 = static_cast<float_t>(co2) / 1000000.0; // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {

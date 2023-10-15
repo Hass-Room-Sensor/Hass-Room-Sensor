@@ -59,7 +59,7 @@ class ZDevice {
     // Carbon Dioxide information:
     esp_zb_carbon_dioxide_measurement_cluster_cfg_t co2Cfg{};
     esp_zb_attribute_list_s* co2AttrList{nullptr};
-    int16_t curCo2{-1};
+    float_t curCo2{-1};
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
 
