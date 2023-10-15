@@ -42,19 +42,24 @@ class ZDevice {
     std::vector<char> manufacturer;
     std::vector<char> version;
 
+    // Cluster list:
+    esp_zb_cluster_list_t* clusterList{nullptr};
+    esp_zb_temperature_sensor_cfg_t clusterListCfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
+
     // Temperature cluster information:
-    esp_zb_temperature_sensor_cfg_t tempCfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
-    esp_zb_cluster_list_t* tempClusterList{nullptr};
+    esp_zb_temperature_meas_cluster_cfg_t tempCfg{};
     esp_zb_attribute_list_t* tempAttrList{nullptr};
     int16_t curTemp{-1};
 
     // Humidity cluster information:
     esp_zb_humidity_meas_cluster_cfg_t humCfg{};
-    esp_zb_cluster_list_t* humClusterList{nullptr};
     esp_zb_attribute_list_t* humAttrList{nullptr};
     int16_t curHum{-1};
 
-    int16_t curPpm{-1};
+    // Carbon Dioxide information:
+    esp_zb_carbon_dioxide_measurement_cluster_cfg_t co2Cfg{};
+    esp_zb_attribute_list_s* co2AttrList{nullptr};
+    int16_t curCo2{-1};
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
 
@@ -68,17 +73,19 @@ class ZDevice {
 
     static const std::unique_ptr<ZDevice>& get_instance();
 
-    void init(double temp, double hum);
+    void init(double temp, double hum, uint16_t co2);
 
     static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask);
 
-    esp_zb_attribute_list_t* setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
-    esp_zb_cluster_list_t* setup_temp_cluster();
-    esp_zb_attribute_list_t* setup_hum_cluster();
+    esp_zb_cluster_list_t* setup_temp_sensor();
+
+    void setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
+    void setup_hum_cluster();
     void setup_co2_cluster();
 
     void update_temp(double temp);
     void update_hum(double hum);
+    void update_co2(uint16_t co2);
     void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
     void set_led_color(const actuators::color_t& color);
 

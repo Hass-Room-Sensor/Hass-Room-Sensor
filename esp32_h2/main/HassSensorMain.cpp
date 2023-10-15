@@ -45,7 +45,7 @@ void mainLoop() {
             measurement = scd41.read_measurement();
             if (measurement) {
                 ESP_LOGI(TAG, "Initial measurement: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
-                zigbee::ZDevice::get_instance()->init(measurement->temp, measurement->hum);
+                zigbee::ZDevice::get_instance()->init(measurement->temp, measurement->hum, measurement->co2);
             }
         } else {
             ESP_LOGI(TAG, "Waiting for initial measurements. SCD41 is not ready yet. Sleeping for a second before rechecking...");
@@ -64,6 +64,7 @@ void mainLoop() {
                 ESP_LOGI(TAG, "[Measurement]: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
                 zigbee::ZDevice::get_instance()->update_temp(measurement->temp);
                 zigbee::ZDevice::get_instance()->update_hum(measurement->hum);
+                zigbee::ZDevice::get_instance()->update_co2(measurement->co2);
                 std::this_thread::sleep_for(std::chrono::seconds(10)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));

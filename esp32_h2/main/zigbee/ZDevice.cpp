@@ -10,6 +10,7 @@
 #include "ha/esp_zigbee_ha_standard.h"
 #include "zb_config_platform.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
+#include "zcl/esp_zigbee_zcl_carbon_dioxide_measurement.h"
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zcl/esp_zigbee_zcl_humidity_meas.h"
@@ -36,12 +37,13 @@ const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
     return instance;
 }
 
-void ZDevice::init(double temp, double hum) {
+void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_LOGI(TAG, "Initializing ZigBee device...");
 
     // Set initial measurements
     curTemp = static_cast<int16_t>(temp * 100);
     curHum = static_cast<int16_t>(hum * 100);
+    curCo2 = static_cast<int16_t>(co2);
 
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = RADIO_MODE_NATIVE;
@@ -84,6 +86,11 @@ void ZDevice::update_hum(double hum) {
     esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
 }
 
+void ZDevice::update_co2(uint16_t co2) {
+    curHum = static_cast<int16_t>(co2);
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curHum), false);
+}
+
 void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "ZigBee task started.");
 
@@ -95,24 +102,20 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(3000).count();
     esp_zb_init(&zb_nwk_cfg);
 
-    // Clusters:
-
-    // Temperature:
-    esp_zb_cluster_list_t* tempClusterList = ZDevice::get_instance()->setup_temp_cluster();
-
-    // CO2:
-    // ZDevice::get_instance()->setup_co2_cluster();
-
-    // Basic information:
-    esp_zb_attribute_list_t* basicAttrList = ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
-    esp_zb_cluster_list_update_basic_cluster(tempClusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    // Cluster list and temperature:
+    esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();
 
     // Humidity:
-    esp_zb_attribute_list_t* humAttrList = ZDevice::get_instance()->setup_hum_cluster();
-    esp_zb_cluster_list_add_humidity_meas_cluster(tempClusterList, humAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    ZDevice::get_instance()->setup_hum_cluster();
+
+    // CO2:
+    ZDevice::get_instance()->setup_co2_cluster();
+
+    // Basic information:
+    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
-    esp_zb_ep_list_add_ep(endpointList, tempClusterList, ENDPOINT_ID, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID);
+    esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID);
     esp_zb_device_register(endpointList);
 
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
@@ -148,40 +151,56 @@ void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
 }
 
-esp_zb_attribute_list_t* ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr) {
+esp_zb_cluster_list_t* ZDevice::setup_temp_sensor() {
+    // Ensure this is called only once
+    assert(!clusterList);
+    assert(!tempAttrList);
+
+    clusterListCfg.temp_meas_cfg.measured_value = curTemp;
+    clusterListCfg.temp_meas_cfg.min_value = -40 * 100;
+    clusterListCfg.temp_meas_cfg.max_value = 100 * 100;
+
+    clusterList = esp_zb_temperature_sensor_clusters_create(&clusterListCfg);
+
+    return clusterList;
+}
+
+void ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr) {
     // Ensure this is called only once
     assert(!basicAttrList);
+    assert(clusterList);
 
     basicAttrList = esp_zb_basic_cluster_create(&basicClusterConfig);
     set_model_id(modelIdStr);
     set_manufacturer(manufacturerStr);
     set_version_details(versionStr);
-    return basicAttrList;
+    ESP_ERROR_CHECK(esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
-esp_zb_cluster_list_t* ZDevice::setup_temp_cluster() {
-    tempCfg.temp_meas_cfg.measured_value = curTemp;
-    tempCfg.temp_meas_cfg.min_value = -40 * 100;
-    tempCfg.temp_meas_cfg.max_value = 100 * 100;
+void ZDevice::setup_hum_cluster() {
+    // Ensure this is called only once
+    assert(!humAttrList);
+    assert(clusterList);
 
-    tempClusterList = esp_zb_temperature_sensor_clusters_create(&tempCfg);
-    tempAttrList = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT);
-    ESP_ERROR_CHECK(esp_zb_temperature_meas_cluster_add_attr(tempAttrList, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp)));
-    return tempClusterList;
-}
-
-esp_zb_attribute_list_t* ZDevice::setup_hum_cluster() {
     humCfg.min_value = 0;
     humCfg.max_value = 100;
     humCfg.measured_value = curHum;
 
     humAttrList = esp_zb_humidity_meas_cluster_create(&humCfg);
-    esp_zb_humidity_meas_cluster_add_attr(humAttrList, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum));
-    return humAttrList;
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_humidity_meas_cluster(clusterList, humAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
 void ZDevice::setup_co2_cluster() {
-    esp_zb_humidity_meas_cluster_add_attr(humAttrList, 0x5, static_cast<void*>(&curPpm));
+    // Ensure this is called only once
+    assert(!co2AttrList);
+    assert(clusterList);
+
+    co2Cfg.min_measured_value = 400;
+    co2Cfg.max_measured_value = 5000;
+    co2Cfg.measured_value = curCo2;
+
+    co2AttrList = esp_zb_carbon_dioxide_measurement_cluster_create(&co2Cfg);
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(clusterList, co2AttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 } // namespace zigbee
 
