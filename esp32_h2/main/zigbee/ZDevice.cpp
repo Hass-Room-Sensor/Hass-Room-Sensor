@@ -46,7 +46,7 @@ void ZDevice::init(double temp, double hum, uint16_t co2) {
     curHum = static_cast<int16_t>(hum * 100);
 
     // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
-    curCo2 = static_cast<float_t>(co2) / 1000000.0;
+    curCo2 = static_cast<float_t>(static_cast<double>(co2) / 1000000.0);
 
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = RADIO_MODE_NATIVE;
@@ -96,8 +96,7 @@ void ZDevice::update_hum(double hum) {
 }
 
 void ZDevice::update_co2(uint16_t co2) {
-    curCo2 = static_cast<float_t>(co2) / 1000000.0; // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
-    ESP_LOGI(TAG, "CO2 value: %f", curCo2);
+    curCo2 = static_cast<float_t>(static_cast<double>(co2) / 1000000.0); // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
     esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
 }
 
@@ -217,8 +216,8 @@ void ZDevice::setup_co2_cluster() {
     assert(!co2AttrList);
     assert(clusterList);
 
-    co2Cfg.min_measured_value = 400;
-    co2Cfg.max_measured_value = 5000;
+    co2Cfg.min_measured_value = static_cast<float_t>(static_cast<double>(400) / 1000000.0);
+    co2Cfg.max_measured_value = static_cast<float_t>(static_cast<double>(5000) / 1000000.0);
     co2Cfg.measured_value = curCo2;
 
     co2AttrList = esp_zb_carbon_dioxide_measurement_cluster_create(&co2Cfg);
