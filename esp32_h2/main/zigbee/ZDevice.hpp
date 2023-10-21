@@ -36,10 +36,10 @@ class ZDevice {
      * 0x6 | Emergency mains and transfer switch
      * 0x7 | Has a secondary power backup.
      **/
-    static constexpr uint8_t POWER_SOURCE = 0b00001000; // Bit 0x4 is set to indicate DC source
+    static constexpr uint8_t DEFAULT_POWER_SOURCE = 0b1 << 0x4; // Bit 0x4 is set to indicate DC source
 
     // Basic cluster information:
-    esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, POWER_SOURCE};
+    esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, DEFAULT_POWER_SOURCE};
     esp_zb_attribute_list_t* basicAttrList{nullptr};
 
     std::vector<char> modelId;
@@ -67,8 +67,10 @@ class ZDevice {
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
 
-    // Reset GPIO used for factory resetting the zigbee stack.
+    // Reset GPIO used for factory resetting the ZigBee stack.
     sensors::GpioInput resetGpio{GPIO_NUM_1};
+    // If set to high the ZigBee stack will be initialized as battery connected device.
+    sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
 
   public:
     ZDevice() = default;

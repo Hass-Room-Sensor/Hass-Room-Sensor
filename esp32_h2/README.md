@@ -18,6 +18,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 | 12   | SCD41 SDA |
 | 22   | SCD41 SCL |
 | 1    | Zigbee factory reset if high |
+| 3    | ZigBee device power mode. low - DC, high - battery |
 
 ## Building
 

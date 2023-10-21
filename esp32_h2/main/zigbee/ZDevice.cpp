@@ -104,6 +104,14 @@ void ZDevice::update_co2(uint16_t co2) {
 void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "ZigBee task started.");
 
+    // ZigBee power source:
+    if (ZDevice::get_instance()->powerSourceBattery.is_powered()) {
+        ZDevice::get_instance()->basicClusterConfig.power_source = 0b1 << 0x3; // Set as battery powered device
+        ESP_LOGI(TAG, "ZigBee device categorized as battery powered.");
+    } else {
+        ESP_LOGI(TAG, "ZigBee device categorized as DC powered.");
+    }
+
     // ZigBee end device config:
     esp_zb_cfg_t zb_nwk_cfg{};
     zb_nwk_cfg.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
