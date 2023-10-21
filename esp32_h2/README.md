@@ -11,6 +11,14 @@ The goal is to support pushing data to Home Assistant via multiple different int
 | ZigBee          | Supported | Temperature and Humidity |
 | Thread (Matter) | TODO   |       |
 
+## ESP32 Pinout
+
+| GPIO | Action |
+| ---- | ------ |
+| 12   | SCD41 SDA |
+| 22   | SCD41 SCL |
+| 1    | Zigbee factory reset if high |
+
 ## Building
 
 ### ESP-IDF

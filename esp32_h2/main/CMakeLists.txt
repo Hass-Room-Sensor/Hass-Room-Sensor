@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 idf_component_register(SRCS "HassSensorMain.cpp"
                             "sensors/Scd41.hpp"
                             "sensors/Scd41.cpp"
+                            "sensors/GpioInput.cpp"
+                            "sensors/GpioInput.hpp"
                             "actuators/RgbLed.hpp"
                             "actuators/RgbLed.cpp"
                             "zigbee/ZDevice.hpp"

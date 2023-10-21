@@ -1,15 +1,19 @@
 #pragma once
 
-#include <cstdint>
-
 #include "actuators/RgbLed.hpp"
-#include "esp_zigbee_type.h"
-#include "ha/esp_zigbee_ha_standard.h"
-#include "zcl/esp_zigbee_zcl_basic.h"
+#include "sensors/GpioInput.hpp"
+
+#include <cstdint>
 #include <memory>
 #include <string>
-#include <sys/_stdint.h>
 #include <vector>
+
+extern "C" {
+#include "esp_zigbee_type.h"
+#include "ha/esp_zigbee_ha_standard.h"
+#include "hal/gpio_types.h"
+#include "zcl/esp_zigbee_zcl_basic.h"
+}
 
 namespace zigbee {
 class ZDevice {
@@ -63,6 +67,9 @@ class ZDevice {
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
 
+    // Reset GPIO used for factory resetting the zigbee stack.
+    sensors::GpioInput resetGpio{GPIO_NUM_1};
+
   public:
     ZDevice() = default;
     ZDevice(ZDevice&&) = default;
@@ -88,6 +95,8 @@ class ZDevice {
     void update_co2(uint16_t co2);
     void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
     void set_led_color(const actuators::color_t& color);
+
+    void reset() const;
 
   private:
     static void zb_main_task(void* arg);

@@ -58,6 +58,12 @@ void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_LOGI(TAG, "ZigBee device initialized.");
 }
 
+void ZDevice::reset() const {
+    ESP_LOGW(TAG, "Performing ZigBee factory reset...");
+    esp_zb_factory_reset();
+    ESP_LOGW(TAG, "ZigBee factory reset done.");
+}
+
 void ZDevice::set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId) {
     assert(basicAttrStr.length() <= 0xFF);
     // The first byte of the attribute string is the length of the following string.
@@ -91,6 +97,7 @@ void ZDevice::update_hum(double hum) {
 
 void ZDevice::update_co2(uint16_t co2) {
     curCo2 = static_cast<float_t>(co2) / 1000000.0; // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
+    ESP_LOGI(TAG, "CO2 value: %f", curCo2);
     esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
 }
 
@@ -126,6 +133,11 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     // Advertise on all channels:
     esp_zb_set_primary_network_channel_set(0x07FFF800);
     ESP_ERROR_CHECK(esp_zb_start(true));
+
+    if (ZDevice::get_instance()->resetGpio.is_powered()) {
+        ZDevice::get_instance()->reset();
+    }
+
     esp_zb_main_loop_iteration();
 
     ESP_LOGI(TAG, "ZigBee task ended.");
@@ -188,7 +200,6 @@ void ZDevice::setup_hum_cluster() {
     humCfg.min_value = 0;
     humCfg.max_value = 100;
     humCfg.measured_value = curHum;
-
     humAttrList = esp_zb_humidity_meas_cluster_create(&humCfg);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_humidity_meas_cluster(clusterList, humAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
