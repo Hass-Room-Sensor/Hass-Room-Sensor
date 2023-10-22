@@ -50,6 +50,11 @@ class ZDevice {
     esp_zb_cluster_list_t* clusterList{nullptr};
     esp_zb_temperature_sensor_cfg_t clusterListCfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
 
+    // OTA:
+    esp_zb_ota_cluster_cfg_t otaCfg{};
+    esp_zb_ota_upgrade_client_parameter_t otaClientCfg{};
+    esp_zb_attribute_list_t* otaAttrList{nullptr};
+
     // Temperature cluster information:
     esp_zb_temperature_meas_cluster_cfg_t tempCfg{};
     esp_zb_attribute_list_t* tempAttrList{nullptr};
@@ -89,6 +94,7 @@ class ZDevice {
     esp_zb_cluster_list_t* setup_temp_sensor();
 
     void setup_basic_cluster(const std::string& modelIdStr, const std::string& manufacturerStr, const std::string& versionStr);
+    void setup_ota_cluster();
     void setup_hum_cluster();
     void setup_co2_cluster();
 
@@ -104,6 +110,7 @@ class ZDevice {
     static void zb_main_task(void* arg);
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
+    static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_update_message_t* messsage);
 
     void set_model_id(const std::string& modelIdStr);
     void set_manufacturer(const std::string& manufacturerStr);

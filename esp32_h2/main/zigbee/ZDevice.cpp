@@ -5,6 +5,7 @@
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
 #include "esp_zigbee_core.h"
+#include "esp_zigbee_ota.h"
 #include "esp_zigbee_type.h"
 #include "freertos/task.h"
 #include "ha/esp_zigbee_ha_standard.h"
@@ -122,6 +123,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     // Cluster list and temperature:
     esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();
 
+    // OTA:
+    ZDevice::get_instance()->setup_ota_cluster();
+
     // Humidity:
     ZDevice::get_instance()->setup_hum_cluster();
 
@@ -155,6 +159,9 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
         case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
             return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
             break;
+        case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
+            return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_update_message_t*>(message));
+            break;
         default:
             ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
             break;
@@ -164,6 +171,21 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
 
 esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg) {
     ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, attrTypeId: %d", msg->info.status, msg->info.dst_endpoint, msg->info.cluster, msg->attribute.id, msg->attribute.data.type);
+    return ESP_OK;
+}
+
+esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_update_message_t* messsage) {
+    if (messsage->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START) {
+            ESP_LOGI(TAG, "OTA started.");
+        } else if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE) {
+            ESP_LOGI(TAG, "OTA receiving...");
+        } else if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH) {
+            ESP_LOGI(TAG, "OTA finished.");
+        } else {
+            ESP_LOGI(TAG, "OTA status: %d", messsage->update_status);
+        }
+    }
     return ESP_OK;
 }
 
@@ -197,6 +219,38 @@ void ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::stri
     set_manufacturer(manufacturerStr);
     set_version_details(versionStr);
     ESP_ERROR_CHECK(esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+}
+
+/*
+typedef struct esp_zb_ota_cluster_cfg_s {
+    uint32_t ota_upgrade_file_version;            //The attribute indicates the file version of the running firmware image on the device
+    uint16_t ota_upgrade_manufacturer;            //The attribute indicates the value for the manufacturer of the device
+    uint16_t ota_upgrade_image_type;              //The attribute indicates the the image type of the file that the client is currently downloading
+    uint16_t ota_min_block_reque;                 //The attribute indicates the delay between Image Block Request commands in milliseconds
+    uint32_t ota_upgrade_file_offset;             //The attribute indicates the the current location in the OTA upgrade image.
+    uint32_t ota_upgrade_downloaded_file_ver;     //The attribute indicates the file version of the downloaded image on the device
+    esp_zb_ieee_addr_t ota_upgrade_server_id;     //The attribute indicates the address of the upgrade server
+    uint8_t ota_image_upgrade_status;             //The attribute indicates the image upgrade status of the client device
+} esp_zb_ota_cluster_cfg_t;
+*/
+
+void ZDevice::setup_ota_cluster() {
+    // Ensure this is called only once
+    assert(!otaAttrList);
+    assert(clusterList);
+
+    otaCfg.ota_upgrade_file_version = 2;
+    otaCfg.ota_upgrade_manufacturer = 42;
+    otaCfg.ota_upgrade_image_type = 0;
+    otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
+
+    otaClientCfg.query_timer = ESP_ZB_ZCL_OTA_UPGRADE_QUERY_TIMER_COUNT_DEF;
+    otaClientCfg.hardware_version = 1;
+    otaClientCfg.max_data_size = 32;
+    void* otaClientParams = esp_zb_ota_client_parameter(&otaClientCfg);
+    esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_CLIENT_PARAMETER_ID, otaClientParams);
+
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_ota_cluster(clusterList, otaAttrList, ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE));
 }
 
 void ZDevice::setup_hum_cluster() {
