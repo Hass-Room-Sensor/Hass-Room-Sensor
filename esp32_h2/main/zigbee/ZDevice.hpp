@@ -1,6 +1,7 @@
 #pragma once
 
 #include "actuators/RgbLed.hpp"
+#include "esp_zigbee_ota.h"
 #include "sensors/GpioInput.hpp"
 
 #include <cstdint>
@@ -21,7 +22,7 @@ class ZDevice {
     static const char* TAG;
 
   private:
-    static constexpr int ENDPOINT_ID = 10;
+    static constexpr esp_zb_endpoint_config_t ENDPOINT_ID{10, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID, 12};
 
     /**
      * The ZigBee spec defines the power source (8 bits) in "3.2.2.2.8 PowerSource Attribute".
@@ -52,7 +53,7 @@ class ZDevice {
 
     // OTA:
     esp_zb_ota_cluster_cfg_t otaCfg{};
-    esp_zb_ota_upgrade_client_parameter_t otaClientCfg{};
+    esp_zb_zcl_ota_upgrade_client_variable_t otaClientCfg{};
     esp_zb_attribute_list_t* otaAttrList{nullptr};
 
     // Temperature cluster information:
@@ -110,7 +111,7 @@ class ZDevice {
     static void zb_main_task(void* arg);
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
-    static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_update_message_t* messsage);
+    static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* messsage);
 
     void set_model_id(const std::string& modelIdStr);
     void set_manufacturer(const std::string& manufacturerStr);

@@ -15,6 +15,7 @@
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zcl/esp_zigbee_zcl_humidity_meas.h"
+#include "zcl/esp_zigbee_zcl_ota.h"
 #include "zcl/esp_zigbee_zcl_temperature_meas.h"
 #include "zdo/esp_zigbee_zdo_common.h"
 #include <array>
@@ -88,17 +89,17 @@ void ZDevice::set_version_details(const std::string& versionStr) {
 
 void ZDevice::update_temp(double temp) {
     curTemp = static_cast<int16_t>(temp * 100); // Temperature values are multiplied by 100 to avoid floating point numbers
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp), false);
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp), false);
 }
 
 void ZDevice::update_hum(double hum) {
     curHum = static_cast<int16_t>(hum * 100); // Humidity values are multiplied by 100 to avoid floating point numbers
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
 }
 
 void ZDevice::update_co2(uint16_t co2) {
     curCo2 = static_cast<float_t>(static_cast<double>(co2) / 1000000.0); // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
+    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {
@@ -136,7 +137,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
-    esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_OUTPUT_DEVICE_ID);
+    esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID);
     esp_zb_device_register(endpointList);
 
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
@@ -160,7 +161,7 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
             return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
             break;
         case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
-            return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_update_message_t*>(message));
+            return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_upgrade_value_message_t*>(message));
             break;
         default:
             ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
@@ -174,16 +175,16 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
     return ESP_OK;
 }
 
-esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_update_message_t* messsage) {
+esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* messsage) {
     if (messsage->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
-        if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START) {
+        if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START) {
             ESP_LOGI(TAG, "OTA started.");
-        } else if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE) {
+        } else if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE) {
             ESP_LOGI(TAG, "OTA receiving...");
-        } else if (messsage->update_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH) {
+        } else if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH) {
             ESP_LOGI(TAG, "OTA finished.");
         } else {
-            ESP_LOGI(TAG, "OTA status: %d", messsage->update_status);
+            ESP_LOGI(TAG, "OTA status: %d", messsage->upgrade_status);
         }
     }
     return ESP_OK;
@@ -244,11 +245,10 @@ void ZDevice::setup_ota_cluster() {
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
-    otaClientCfg.query_timer = ESP_ZB_ZCL_OTA_UPGRADE_QUERY_TIMER_COUNT_DEF;
-    otaClientCfg.hardware_version = 1;
-    otaClientCfg.max_data_size = 32;
-    void* otaClientParams = esp_zb_ota_client_parameter(&otaClientCfg);
-    esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_CLIENT_PARAMETER_ID, otaClientParams);
+    otaClientCfg.timer_query = ESP_ZB_ZCL_OTA_UPGRADE_QUERY_TIMER_COUNT_DEF;
+    otaClientCfg.hw_version = 1;
+    otaClientCfg.max_data_size = 64;
+    esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_CLIENT_DATA_ID, static_cast<void*>(&otaClientCfg));
 
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_ota_cluster(clusterList, otaAttrList, ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE));
 }

@@ -3,7 +3,6 @@
 #include "FreeRTOSConfig.h"
 #include "hal/gpio_types.h"
 #include "hal/i2c_types.h"
-#include "portmacro.h"
 #include <array>
 #include <chrono>
 #include <cstddef>

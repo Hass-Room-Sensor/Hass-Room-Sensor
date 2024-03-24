@@ -19,7 +19,7 @@ const char* TAG = "hassSensor";
 } // namespace
 
 void mainLoop() {
-    esp_log_set_level_master(ESP_LOG_VERBOSE);
+    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
 
     // Initialize the flash:
     ESP_ERROR_CHECK(nvs_flash_init());
