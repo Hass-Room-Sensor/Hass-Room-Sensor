@@ -24,7 +24,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 
 ### ESP-IDF
 
-For building the [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites) is required.
+For building the [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites) version `5.1` is required.
 Follow the following guide to install the standard toolchain: https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites
 
 ### Visual Studio Code
@@ -38,3 +38,29 @@ Execute them and you are ready to go!
 ### ESP32-H2-DevKitM-1
 
 Documentation: https://espressif-docs.readthedocs-hosted.com/projects/esp-dev-kits/en/latest/esp32h2/esp32-h2-devkitm-1/user_guide.html
+
+```bash
+# Build
+cd esp32_h2/
+idf.py set-target esp32h2
+idf.py build
+
+# Flash (change the ttyUSB0 according to where you plug in your ESP)
+idf.py -p /dev/ttyUSB0 flash
+```
+
+### ESP32-C6-mini-1
+
+The following commands show how to build and flash via JTAG.
+
+```bash
+# Build
+cd esp32_h2/
+idf.py set-target esp32c6
+idf.py build
+
+# Flash
+openocd -f board/esp32c6-builtin.cfg -c "program_esp build/bootloader/bootloader.bin 0x0 verify exit"
+openocd -f board/esp32c6-builtin.cfg -c "program_esp build/partition_table/partition-table.bin 0x8000 verify exit"
+openocd -f board/esp32c6-builtin.cfg -c "program_esp build/hass_sensor.bin 0x10000 verify exit"
+```
