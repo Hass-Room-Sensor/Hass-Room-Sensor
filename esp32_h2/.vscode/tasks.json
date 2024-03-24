@@ -4,7 +4,7 @@
 		{
 			"label": "🏗️ | Build",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 build",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py build",
 			"group": "build"
 		},
 		{
