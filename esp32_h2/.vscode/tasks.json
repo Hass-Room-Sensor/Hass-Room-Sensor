@@ -10,7 +10,7 @@
 		{
 			"label": "🎯 | Set Target",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py --preview set-target esp32h2",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py set-target esp32h2",
 			"problemMatcher": []
 		},
 		{
