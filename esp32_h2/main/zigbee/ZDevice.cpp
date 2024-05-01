@@ -222,19 +222,6 @@ void ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::stri
     ESP_ERROR_CHECK(esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
-/*
-typedef struct esp_zb_ota_cluster_cfg_s {
-    uint32_t ota_upgrade_file_version;            //The attribute indicates the file version of the running firmware image on the device
-    uint16_t ota_upgrade_manufacturer;            //The attribute indicates the value for the manufacturer of the device
-    uint16_t ota_upgrade_image_type;              //The attribute indicates the the image type of the file that the client is currently downloading
-    uint16_t ota_min_block_reque;                 //The attribute indicates the delay between Image Block Request commands in milliseconds
-    uint32_t ota_upgrade_file_offset;             //The attribute indicates the the current location in the OTA upgrade image.
-    uint32_t ota_upgrade_downloaded_file_ver;     //The attribute indicates the file version of the downloaded image on the device
-    esp_zb_ieee_addr_t ota_upgrade_server_id;     //The attribute indicates the address of the upgrade server
-    uint8_t ota_image_upgrade_status;             //The attribute indicates the image upgrade status of the client device
-} esp_zb_ota_cluster_cfg_t;
-*/
-
 void ZDevice::setup_ota_cluster() {
     // Ensure this is called only once
     assert(!otaAttrList);
