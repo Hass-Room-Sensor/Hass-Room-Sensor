@@ -91,6 +91,7 @@ class ZDevice {
     void init(double temp, double hum, uint16_t co2);
 
     static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask);
+    static esp_err_t deferred_driver_init();
 
     esp_zb_cluster_list_t* setup_temp_sensor();
 
@@ -108,6 +109,8 @@ class ZDevice {
     void reset() const;
 
   private:
+    static esp_err_t power_saver_init();
+
     static void zb_main_task(void* arg);
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);

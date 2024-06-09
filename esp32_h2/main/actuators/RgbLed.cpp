@@ -21,7 +21,7 @@ void RgbLed::init() {
     strip_config.strip_gpio_num = gpio;
     strip_config.max_leds = 1;
     led_strip_rmt_config_t rmt_config = {};
-    rmt_config.resolution_hz = 10 * 1000 * 1000;  // 10MHz
+    rmt_config.resolution_hz = 10 * 1000 * 1000; // 10MHz
 
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
 
@@ -56,4 +56,4 @@ color_t RgbLed::hueToRgb(double hue) {
 
     return {static_cast<uint8_t>(r * 255), static_cast<uint8_t>(g * 255), static_cast<uint8_t>(b * 255)};
 }
-}  // namespace actuators
+} // namespace actuators

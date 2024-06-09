@@ -18,6 +18,11 @@
 #include "zcl/esp_zigbee_zcl_ota.h"
 #include "zcl/esp_zigbee_zcl_temperature_meas.h"
 #include "zdo/esp_zigbee_zdo_common.h"
+#ifdef CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#include "esp_private/esp_clk.h"
+#include "esp_sleep.h"
+#endif
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -40,6 +45,21 @@ const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
     return instance;
 }
 
+esp_err_t ZDevice::power_saver_init() {
+    esp_err_t rc = ESP_OK;
+#ifdef CONFIG_PM_ENABLE
+    int cur_cpu_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    esp_pm_config_t pm_config = {.max_freq_mhz = cur_cpu_freq_mhz,
+                                 .min_freq_mhz = cur_cpu_freq_mhz,
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+                                 .light_sleep_enable = true
+#endif
+    };
+    rc = esp_pm_configure(&pm_config);
+#endif
+    return rc;
+}
+
 void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_LOGI(TAG, "Initializing ZigBee device...");
 
@@ -50,13 +70,15 @@ void ZDevice::init(double temp, double hum, uint16_t co2) {
     // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
     curCo2 = static_cast<float_t>(static_cast<double>(co2) / 1000000.0);
 
+    ESP_ERROR_CHECK(power_saver_init());
+
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = RADIO_MODE_NATIVE;
     config.host_config.host_connection_mode = HOST_CONNECTION_MODE_NONE;
 
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
 
-    xTaskCreate(ZDevice::zb_main_task, "Zigbee_main", 4096, this, 5, nullptr);
+    xTaskCreate(ZDevice::zb_main_task, "zigbee_main", 4096, this, 5, nullptr);
     ESP_LOGI(TAG, "ZigBee device initialized.");
 }
 
@@ -113,13 +135,17 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ESP_LOGI(TAG, "ZigBee device categorized as DC powered.");
     }
 
+    // Enable zigbee light sleep:
+    esp_zb_sleep_enable(true);
+
     // ZigBee end device config:
     esp_zb_cfg_t zb_nwk_cfg{};
     zb_nwk_cfg.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
     zb_nwk_cfg.install_code_policy = false;
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
-    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(3000).count();
+    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(4000).count();
     esp_zb_init(&zb_nwk_cfg);
+    esp_zb_sleep_set_threshold(20);
 
     // Cluster list and temperature:
     esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();
@@ -272,7 +298,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
 
     switch (sig_type) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
-            zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
+            zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 30});
             ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized");
             esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
             break;
@@ -281,8 +307,15 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
         case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (err_status == ESP_OK) {
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
-                ESP_LOGI(zigbee::ZDevice::TAG, "Start network steering");
-                esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+                ESP_LOGI(zigbee::ZDevice::TAG, "Device started up in %s factory-reset mode", esp_zb_bdb_is_factory_new() ? "" : "non");
+                if (esp_zb_bdb_is_factory_new()) {
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Start network steering");
+                    esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+                } else {
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Device rebooted");
+                    // This has to be done here as well. Else the device won't connect...
+                    esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+                }
             } else {
                 /* commissioning failed */
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 0});
@@ -304,8 +337,18 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             }
             break;
 
+        case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
+            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device can sleep signal received.");
+            esp_zb_sleep_now();
+            break;
+
+        case ESP_ZB_ZDO_SIGNAL_PRODUCTION_CONFIG_READY:
+            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device production config ready.");
+            esp_zb_set_node_descriptor_manufacturer_code(42);
+            break;
+
         default:
-            ESP_LOGI(zigbee::ZDevice::TAG, "ZDO signal: %d, status: %d", sig_type, err_status);
+            ESP_LOGW(zigbee::ZDevice::TAG, "ZDO unhandled signal: %d, error status: %d", sig_type, err_status);
             break;
     }
 }
