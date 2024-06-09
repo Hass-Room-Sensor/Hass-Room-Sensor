@@ -185,10 +185,8 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
     switch (callback_id) {
         case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
             return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
-            break;
         case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
             return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_upgrade_value_message_t*>(message));
-            break;
         default:
             ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
             break;
@@ -332,7 +330,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
                 ESP_LOGI(zigbee::ZDevice::TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
             } else {
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 20, 0});
-                ESP_LOGI(zigbee::ZDevice::TAG, "Network steering was not successful (status: %d)", err_status);
+                ESP_LOGI(zigbee::ZDevice::TAG, "Network steering was not successful (status: %s)", esp_err_to_name(err_status));
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             }
             break;
@@ -348,7 +346,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             break;
 
         default:
-            ESP_LOGW(zigbee::ZDevice::TAG, "ZDO unhandled signal: %d, error status: %d", sig_type, err_status);
+            ESP_LOGW(zigbee::ZDevice::TAG, "ZDO unhandled signal: %d, error status: %s", sig_type, esp_err_to_name(err_status));
             break;
     }
 }
