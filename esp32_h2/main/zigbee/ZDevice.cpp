@@ -73,8 +73,8 @@ void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_ERROR_CHECK(power_saver_init());
 
     esp_zb_platform_config_t config = {};
-    config.radio_config.radio_mode = RADIO_MODE_NATIVE;
-    config.host_config.host_connection_mode = HOST_CONNECTION_MODE_NONE;
+    config.radio_config.radio_mode = ZB_RADIO_MODE_NATIVE;
+    config.host_config.host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE;
 
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
 
@@ -243,7 +243,7 @@ void ZDevice::setup_basic_cluster(const std::string& modelIdStr, const std::stri
     set_model_id(modelIdStr);
     set_manufacturer(manufacturerStr);
     set_version_details(versionStr);
-    ESP_ERROR_CHECK(esp_zb_cluster_list_update_basic_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_update_cluster(clusterList, basicAttrList, ESP_ZB_ZCL_CLUSTER_ID_BASIC, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
 void ZDevice::setup_ota_cluster() {
