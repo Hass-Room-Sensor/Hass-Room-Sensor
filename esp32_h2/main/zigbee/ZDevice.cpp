@@ -145,7 +145,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
     zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(4000).count();
     esp_zb_init(&zb_nwk_cfg);
-    esp_zb_sleep_set_threshold(20);
+    esp_zb_sleep_set_threshold(std::chrono::milliseconds(50).count());
 
     // Cluster list and temperature:
     esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();
@@ -292,9 +292,9 @@ void ZDevice::setup_co2_cluster() {
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
     esp_err_t err_status = signal_struct->esp_err_status;
-    esp_zb_app_signal_type_t sig_type = static_cast<esp_zb_app_signal_type_t>(*signal_struct->p_app_signal);
+    esp_zb_app_signal_type_t sigType = static_cast<esp_zb_app_signal_type_t>(*signal_struct->p_app_signal);
 
-    switch (sig_type) {
+    switch (sigType) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
             zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 30});
             ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized");
@@ -310,9 +310,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
                     ESP_LOGI(zigbee::ZDevice::TAG, "Start network steering");
                     esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
                 } else {
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Device rebooted");
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Device rebooted or woke up from sleep.");
                     // This has to be done here as well. Else the device won't connect...
-                    esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+                    esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
                 }
             } else {
                 /* commissioning failed */
@@ -336,7 +336,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             break;
 
         case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
-            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device can sleep signal received.");
+            ESP_LOGD(zigbee::ZDevice::TAG, "ZigBee device can sleep signal received.");
             esp_zb_sleep_now();
             break;
 
@@ -345,8 +345,26 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             esp_zb_set_node_descriptor_manufacturer_code(42);
             break;
 
+        case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:
+            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device unavailable with error status: %s.", esp_err_to_name(err_status));
+            break;
+
+        case ESP_ZB_ZDO_SIGNAL_LEAVE: {
+            const esp_zb_zdo_signal_leave_params_t* leaveParams = static_cast<esp_zb_zdo_signal_leave_params_t*>(esp_zb_app_signal_get_params(signal_struct->p_app_signal));
+            if (leaveParams->leave_type == ESP_ZB_NWK_LEAVE_TYPE_RESET) {
+                ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with device reset request and error status '%s' received.", esp_err_to_name(err_status));
+                esp_zb_factory_reset();
+            } else {
+                ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with error status '%s' received.", esp_err_to_name(err_status));
+            }
+        } break;
+
+        case ESP_ZB_NLME_STATUS_INDICATION:
+            ESP_LOGI(zigbee::ZDevice::TAG, "%s NLME status '0x%x\n' with error status: %s", esp_zb_zdo_signal_to_string(sigType), *static_cast<uint8_t*>(esp_zb_app_signal_get_params(signal_struct->p_app_signal)), esp_err_to_name(err_status));
+            break;
+
         default:
-            ESP_LOGW(zigbee::ZDevice::TAG, "ZDO unhandled signal: %d, error status: %s", sig_type, esp_err_to_name(err_status));
+            ESP_LOGW(zigbee::ZDevice::TAG, "ZDO unhandled signal: %s, error status: %s", esp_zb_zdo_signal_to_string(sigType), esp_err_to_name(err_status));
             break;
     }
 }
