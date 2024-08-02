@@ -37,7 +37,7 @@ void ZDevice::set_led(std::shared_ptr<actuators::RgbLed> rgbLed) {
 }
 
 void ZDevice::set_led_color(const actuators::color_t& color) {
-    rgbLed->on(color);
+    // rgbLed->on(color);
 }
 
 const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
@@ -170,7 +170,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     // Advertise on all channels:
     esp_zb_set_primary_network_channel_set(0x07FFF800);
-    ESP_ERROR_CHECK(esp_zb_start(true));
+    ESP_ERROR_CHECK(esp_zb_start(false));
 
     if (ZDevice::get_instance()->resetGpio.is_powered()) {
         ZDevice::get_instance()->reset();
