@@ -336,7 +336,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             break;
 
         case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
-            ESP_LOGD(zigbee::ZDevice::TAG, "ZigBee device can sleep signal received.");
+            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device can sleep signal received.");
             esp_zb_sleep_now();
             break;
 
