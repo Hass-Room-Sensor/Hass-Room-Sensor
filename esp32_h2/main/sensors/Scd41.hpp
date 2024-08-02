@@ -45,6 +45,8 @@ class Scd41 {
     [[nodiscard]] bool get_data_ready_status() const;
     [[nodiscard]] bool start_periodic_measurement() const;
     [[nodiscard]] bool stop_periodic_measurement() const;
+    [[nodiscard]] bool perform_factory_reset() const;
+    [[nodiscard]] bool reinit() const;
     [[nodiscard]] bool perform_self_test() const;
     [[nodiscard]] uint64_t get_serial_number() const;
     void set_temperature_offset(double offset) const;

@@ -58,6 +58,14 @@ bool Scd41::init() const {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
+    /*if (!perform_factory_reset()) {
+        return false;
+    }
+
+    if (!reinit()) {
+        return false;
+    }*/
+
     // For Dagersheim: https://de-de.topographic-map.com/map-27vsrr/Dagersheim/
     set_sensor_altitude(438);
     // persist_settings(); // "The EEPROM is guaranteed to withstand at least 2000 write cycles."
@@ -253,6 +261,26 @@ bool Scd41::get_data_ready_status() const {
 
     ESP_LOGD(TAG, "Is ready response: 0x%02x", response[0]);
     return (response[0] & ((static_cast<uint64_t>(1) << 12) - 1)) != 0;
+}
+
+bool Scd41::perform_factory_reset() const {
+    ESP_LOGD(TAG, "Starting factory reset...");
+    std::array<uint16_t, 1> response{};
+    if (!write_read(0x3632, response, std::chrono::milliseconds(1200))) {
+        ESP_LOGE(TAG, "Failed to perform factory reset.");
+        return false;
+    }
+    return true;
+}
+
+bool Scd41::reinit() const {
+    ESP_LOGD(TAG, "Starting reinit...");
+    std::array<uint16_t, 1> response{};
+    if (!write_read(0x3646, response, std::chrono::milliseconds(30))) {
+        ESP_LOGE(TAG, "Failed to perform reinit.");
+        return false;
+    }
+    return true;
 }
 
 bool Scd41::perform_self_test() const {

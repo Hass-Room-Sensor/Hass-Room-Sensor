@@ -31,15 +31,15 @@ void mainLoop() {
     zigbee::ZDevice::get_instance()->set_led(rgbLed);*/
 
     // Initialize the SCD41 sensor:
-    /*sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
+    sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
     if (!scd41.init()) {
-        rgbLed->on(actuators::color_t{30, 0, 0});
+        // rgbLed->on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
-    }*/
+    }
 
     // Setup ZigBee device with initial measurements:
-    /*std::optional<sensors::measurement_t> measurement = std::nullopt;
+    std::optional<sensors::measurement_t> measurement = std::nullopt;
     do {
         if (scd41.get_data_ready_status()) {
             measurement = scd41.read_measurement();
@@ -51,13 +51,13 @@ void mainLoop() {
             ESP_LOGI(TAG, "Waiting for initial measurements. SCD41 is not ready yet. Sleeping for a second before rechecking...");
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-    } while (!measurement);*/
+    } while (!measurement);
     zigbee::ZDevice::get_instance()->init(0, 0, 0);
 
     ESP_LOGI(TAG, "Everything initialized.");
 
     // Main loop:
-    /*while (true) {
+    while (true) {
         ESP_LOGI(TAG, "Data ready. Reading...");
         measurement = scd41.read_measurement();
         if (measurement) {
@@ -69,7 +69,7 @@ void mainLoop() {
         } else {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
-    }*/
+    }
 }
 
 /* Inside .cpp file, app_main function must be declared with C linkage */
