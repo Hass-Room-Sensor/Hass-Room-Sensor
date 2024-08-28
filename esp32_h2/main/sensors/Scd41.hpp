@@ -1,8 +1,9 @@
 #pragma once
 
 #include "FreeRTOSConfig.h"
-#include "hal/gpio_types.h"
-#include "hal/i2c_types.h"
+#include "driver/i2c_master.h"
+#include "driver/i2c_types.h"
+#include "soc/gpio_num.h"
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -25,14 +26,18 @@ class Scd41 {
     static constexpr uint8_t DEVICE_ADDR = 0x62;
     static const char* TAG;
 
-    i2c_port_t port;
     gpio_num_t sda;
     gpio_num_t scl;
+
+    i2c_master_bus_config_t busConf{};
+    i2c_master_bus_handle_t bus{};
+    i2c_device_config_t devConf{};
+    i2c_master_dev_handle_t dev{};
 
     std::array<uint8_t, 2> buffer;
 
   public:
-    Scd41(i2c_port_t port, gpio_num_t sda, gpio_num_t scl);
+    Scd41(gpio_num_t sda, gpio_num_t scl);
     Scd41(Scd41&&) = default;
     Scd41(const Scd41&) = default;
     Scd41& operator=(Scd41&&) = default;
@@ -58,8 +63,8 @@ class Scd41 {
   private:
     static uint8_t calc_crc(const std::span<uint8_t> data);
 
-    static void transform_to_send_data(const std::span<uint16_t> data, std::span<uint8_t> dataPrepared);
-    static bool validate_transform_received_data(const std::span<uint8_t> dataReceived, std::span<uint16_t> data);
+    static void transform_to_send_data(const std::span<uint16_t> input, std::span<uint8_t> output, size_t outputOffset);
+    static bool validate_transform_received_data(const std::span<uint8_t> input, std::span<uint16_t> output);
 
     [[nodiscard]] bool write(uint16_t reg, std::chrono::milliseconds timeout) const;
     [[nodiscard]] bool write(uint16_t reg, uint16_t payload, std::chrono::milliseconds timeout) const;

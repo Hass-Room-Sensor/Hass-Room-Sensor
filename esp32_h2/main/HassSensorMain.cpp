@@ -1,7 +1,6 @@
 #include "actuators/RgbLed.hpp"
 #include "esp_log.h"
 #include "hal/gpio_types.h"
-#include "hal/i2c_types.h"
 #include "nvs_flash.h"
 #include "sensors/Scd41.hpp"
 #include "zigbee/ZDevice.hpp"
@@ -31,7 +30,7 @@ void mainLoop() {
     zigbee::ZDevice::get_instance()->set_led(rgbLed);*/
 
     // Initialize the SCD41 sensor:
-    sensors::Scd41 scd41(I2C_NUM_0, GPIO_NUM_12, GPIO_NUM_22);
+    sensors::Scd41 scd41(GPIO_NUM_6, GPIO_NUM_7);
     if (!scd41.init()) {
         // rgbLed->on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");

@@ -1,7 +1,8 @@
 #include "sensors/Scd41.hpp"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "driver/i2c_types.h"
 #include "esp_log.h"
-#include "hal/i2c_types.h"
+#include "soc/clk_tree_defs.h"
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -13,10 +14,32 @@
 #include <thread>
 #include <vector>
 
+/**
+ * I2C Docs:
+ * https://docs.espressif.com/projects/esp-idf/en/v5.3/esp32/api-reference/peripherals/i2c.html
+ **/
+
 namespace sensors {
 const char* Scd41::TAG = "SCD41";
 
-Scd41::Scd41(i2c_port_t port, gpio_num_t sda, gpio_num_t scl) : port(port), sda(sda), scl(scl) {}
+Scd41::Scd41(gpio_num_t sda, gpio_num_t scl) : sda(sda), scl(scl) {
+    busConf.clk_source = I2C_CLK_SRC_DEFAULT; // TODO(Fabian): Check if it works with power save mode
+    busConf.sda_io_num = sda;
+    busConf.scl_io_num = scl;
+    busConf.i2c_port = -1;
+    busConf.glitch_ignore_cnt = 7;
+
+    ESP_ERROR_CHECK(i2c_new_master_bus(&busConf, &bus)); // No ports available -> ESP_ERR_NOT_FOUND
+
+    devConf.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    devConf.device_address = DEVICE_ADDR;
+    devConf.scl_speed_hz = 100000;
+    devConf.scl_wait_us = 0; // Use default
+
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus, &devConf, &dev));
+
+    ESP_LOGI(TAG, "Bus and device created.");
+}
 
 bool Scd41::init() const {
     {
@@ -27,19 +50,10 @@ bool Scd41::init() const {
         std::array<uint8_t, 2> arrB{0x00, 0x00};
         const uint8_t crcB = calc_crc(arrB);
         assert(crcB == 0x81);
+
+        ESP_LOGD(TAG, "CRC check successful.");
     }
 
-    i2c_config_t conf = {};
-    conf.mode = I2C_MODE_MASTER;
-    conf.sda_io_num = sda;
-    conf.scl_io_num = scl;
-    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.master.clk_speed = 100000;
-
-    i2c_param_config(port, &conf);
-    ESP_ERROR_CHECK(i2c_driver_install(port, conf.mode, 0, 0, 0));
-    ESP_LOGI(TAG, "Driver installed.");
 
     // Make sure the sensor has enough time to enter idle state:
     ESP_LOGI(TAG, "Waiting for sensor to enter idle state...");
@@ -85,15 +99,20 @@ bool Scd41::init() const {
 
 Scd41::~Scd41() {
     (void) stop_periodic_measurement();
+
+    // Cleanup I2C devices
+    ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev));
+    ESP_ERROR_CHECK(i2c_del_master_bus(bus));
+    ESP_LOGI(TAG, "Bus and device deleted.");
 }
 
-void Scd41::transform_to_send_data(const std::span<uint16_t> input, std::span<uint8_t> output) {
+void Scd41::transform_to_send_data(const std::span<uint16_t> input, std::span<uint8_t> output, size_t outputOffset) {
     assert(output.size() == input.size() * 3);
     if (output.size() != input.size() * 3) {
         throw std::invalid_argument("output.size() != input.size() * 3");
     }
 
-    size_t preparedDataIndex = 0;
+    size_t preparedDataIndex = outputOffset;
     for (size_t i = 0; i < input.size(); i++) {
         output[preparedDataIndex] = static_cast<uint8_t>(input[i] >> 8);
         output[preparedDataIndex + 1] = static_cast<uint8_t>(input[i] & 0xFF);
@@ -126,17 +145,7 @@ bool Scd41::validate_transform_received_data(const std::span<uint8_t> input, std
 bool Scd41::write(uint16_t reg, std::chrono::milliseconds timeout) const {
     std::array<uint8_t, 2> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-
-    i2c_master_write_byte(cmd, (DEVICE_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write(cmd, data.data(), data.size(), true);
-
-    i2c_master_stop(cmd);
-
-    esp_err_t result = i2c_master_cmd_begin(port, cmd, static_cast<TickType_t>(timeout.count()) / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), timeout.count());
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write for write command.");
         return false;
@@ -145,25 +154,14 @@ bool Scd41::write(uint16_t reg, std::chrono::milliseconds timeout) const {
 }
 
 bool Scd41::write(uint16_t reg, uint16_t payload, std::chrono::milliseconds timeout) const {
-    std::array<uint8_t, 2> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
-
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-
-    i2c_master_write_byte(cmd, (DEVICE_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write(cmd, data.data(), data.size(), true);
+    std::vector<uint8_t> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
+    data.resize(5);
 
     // Payload
-    std::vector<uint8_t> payloadBytes{0x0, 0x0};
-    uint8_t crc = calc_crc(payloadBytes);
-    payloadBytes.push_back(crc);
-    i2c_master_write(cmd, payloadBytes.data(), payloadBytes.size(), true);
+    std::array<uint16_t, 1> payloadArr{payload};
+    transform_to_send_data(payloadArr, data, 2);
 
-    i2c_master_stop(cmd);
-
-    esp_err_t result = i2c_master_cmd_begin(port, cmd, static_cast<TickType_t>(timeout.count()) / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
+    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), timeout.count());
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write for write command.");
         return false;
@@ -174,41 +172,11 @@ bool Scd41::write(uint16_t reg, uint16_t payload, std::chrono::milliseconds time
 bool Scd41::write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::milliseconds timeout) const {
     std::array<uint8_t, 2> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
 
-    // Write:
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (DEVICE_ADDR << 1) | I2C_MASTER_WRITE, I2C_MASTER_ACK);
-    i2c_master_write(cmd, data.data(), data.size(), true);
-
-    esp_err_t result = i2c_master_cmd_begin(port, cmd, static_cast<TickType_t>(timeout.count()) / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-
-    if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write for write_read command.");
-        return false;
-    }
-
-    // Pause the given time:
-    std::this_thread::sleep_for(timeout);
-
-    // Read:
+    // Response:
     std::vector<uint8_t> tmpResponse;
     tmpResponse.resize(response.size() * 3);
 
-    cmd = i2c_cmd_link_create();
-
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (DEVICE_ADDR << 1) | I2C_MASTER_READ, I2C_MASTER_ACK);
-
-    for (size_t i = 0; i < tmpResponse.size(); i += 3) {
-        i2c_master_read(cmd, tmpResponse.data() + i, 2, I2C_MASTER_ACK);
-        i2c_master_read(cmd, tmpResponse.data() + i + 2, 1, (i + 3) >= tmpResponse.size() ? I2C_MASTER_NACK : I2C_MASTER_ACK);
-    }
-
-    i2c_master_stop(cmd);
-
-    result = i2c_master_cmd_begin(port, cmd, static_cast<TickType_t>(timeout.count()) / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
+    esp_err_t result = i2c_master_transmit_receive(dev, data.data(), data.size(), tmpResponse.data(), tmpResponse.size(), timeout.count());
 
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write for write_read command.");
