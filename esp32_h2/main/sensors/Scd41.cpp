@@ -59,26 +59,35 @@ bool Scd41::init() const {
     ESP_LOGI(TAG, "Waiting for sensor to enter idle state...");
     std::this_thread::sleep_for(std::chrono::seconds(1));
     ESP_LOGI(TAG, "Idle state reached.");
+    ESP_LOGI(TAG, "Stopping periodic measurement...");
 
     // Stop all existing measurements:
     if (!stop_periodic_measurement()) {
         return false;
     }
+    ESP_LOGI(TAG, "Periodic measurement stopped.");
+    ESP_LOGI(TAG, "Performing self test...");
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Test if everything works:
     if (!perform_self_test()) {
+        ESP_LOGE(TAG, "Self test failed.");
         return false;
     }
+    ESP_LOGI(TAG, "Self test done.");
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    /*if (!perform_factory_reset()) {
+    // ESP_LOGI(TAG, "Reinit started...");
+    // if (!reinit()) {
+    //     return false;
+    // }
+    // ESP_LOGI(TAG, "Reinit done.");
+
+    /*ESP_LOGI(TAG, "Performing factory reset...");
+    if (!perform_factory_reset()) {
         return false;
     }
-
-    if (!reinit()) {
-        return false;
-    }*/
+    ESP_LOGI(TAG, "Factory reset done.");*/
 
     // For Dagersheim: https://de-de.topographic-map.com/map-27vsrr/Dagersheim/
     set_sensor_altitude(438);
@@ -107,8 +116,8 @@ Scd41::~Scd41() {
 }
 
 void Scd41::transform_to_send_data(const std::span<uint16_t> input, std::span<uint8_t> output, size_t outputOffset) {
-    assert(output.size() == input.size() * 3);
-    if (output.size() != input.size() * 3) {
+    assert(output.size() == (input.size() * 3) + outputOffset);
+    if (output.size() != (input.size() * 3) + outputOffset) {
         throw std::invalid_argument("output.size() != input.size() * 3");
     }
 
@@ -154,8 +163,7 @@ bool Scd41::write(uint16_t reg, std::chrono::milliseconds timeout) const {
 }
 
 bool Scd41::write(uint16_t reg, uint16_t payload, std::chrono::milliseconds timeout) const {
-    std::vector<uint8_t> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
-    data.resize(5);
+    std::array<uint8_t, 5> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF), 0x0, 0x0, 0x0};
 
     // Payload
     std::array<uint16_t, 1> payloadArr{payload};
@@ -170,13 +178,15 @@ bool Scd41::write(uint16_t reg, uint16_t payload, std::chrono::milliseconds time
 }
 
 bool Scd41::write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::milliseconds timeout) const {
-    std::array<uint8_t, 2> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
+    if (!write(reg, timeout)) {
+        return false;
+    }
+    std::this_thread::sleep_for(timeout);
 
     // Response:
     std::vector<uint8_t> tmpResponse;
     tmpResponse.resize(response.size() * 3);
-
-    esp_err_t result = i2c_master_transmit_receive(dev, data.data(), data.size(), tmpResponse.data(), tmpResponse.size(), timeout.count());
+    esp_err_t result = i2c_master_receive(dev, tmpResponse.data(), tmpResponse.size(), timeout.count());
 
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write for write_read command.");
@@ -355,5 +365,4 @@ double Scd41::convert_measurement_to_hum(uint16_t mHum) {
 uint16_t Scd41::convert_measurement_to_co2(uint16_t mCo2) {
     return mCo2; // Nothing needs to be done here
 }
-
 } // namespace sensors
