@@ -26,8 +26,9 @@ Scd41::Scd41(gpio_num_t sda, gpio_num_t scl) : sda(sda), scl(scl) {
     busConf.clk_source = I2C_CLK_SRC_DEFAULT; // TODO(Fabian): Check if it works with power save mode
     busConf.sda_io_num = sda;
     busConf.scl_io_num = scl;
-    busConf.i2c_port = -1;
+    busConf.i2c_port = 0;
     busConf.glitch_ignore_cnt = 7;
+    busConf.flags.enable_internal_pullup = 0;
 
     ESP_ERROR_CHECK(i2c_new_master_bus(&busConf, &bus)); // No ports available -> ESP_ERR_NOT_FOUND
 
@@ -35,6 +36,7 @@ Scd41::Scd41(gpio_num_t sda, gpio_num_t scl) : sda(sda), scl(scl) {
     devConf.device_address = DEVICE_ADDR;
     devConf.scl_speed_hz = 100000;
     devConf.scl_wait_us = 0; // Use default
+    devConf.flags.disable_ack_check = 0;
 
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus, &devConf, &dev));
 
@@ -54,11 +56,15 @@ bool Scd41::init() const {
         ESP_LOGD(TAG, "CRC check successful.");
     }
 
-
     // Make sure the sensor has enough time to enter idle state:
     ESP_LOGI(TAG, "Waiting for sensor to enter idle state...");
     std::this_thread::sleep_for(std::chrono::seconds(1));
     ESP_LOGI(TAG, "Idle state reached.");
+
+    if (probe_device()) {
+    }
+    ESP_LOGI(TAG, "Probing was successful!");
+
     ESP_LOGI(TAG, "Stopping periodic measurement...");
 
     // Stop all existing measurements:
@@ -67,7 +73,6 @@ bool Scd41::init() const {
     }
     ESP_LOGI(TAG, "Periodic measurement stopped.");
     ESP_LOGI(TAG, "Performing self test...");
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // Test if everything works:
     if (!perform_self_test()) {
@@ -75,7 +80,6 @@ bool Scd41::init() const {
         return false;
     }
     ESP_LOGI(TAG, "Self test done.");
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     // ESP_LOGI(TAG, "Reinit started...");
     // if (!reinit()) {
@@ -83,11 +87,11 @@ bool Scd41::init() const {
     // }
     // ESP_LOGI(TAG, "Reinit done.");
 
-    /*ESP_LOGI(TAG, "Performing factory reset...");
-    if (!perform_factory_reset()) {
-        return false;
-    }
-    ESP_LOGI(TAG, "Factory reset done.");*/
+    // ESP_LOGI(TAG, "Performing factory reset...");
+    // if (!perform_factory_reset()) {
+    //     return false;
+    // }
+    // ESP_LOGI(TAG, "Factory reset done.");
 
     // For Dagersheim: https://de-de.topographic-map.com/map-27vsrr/Dagersheim/
     set_sensor_altitude(438);
@@ -154,9 +158,9 @@ bool Scd41::validate_transform_received_data(const std::span<uint8_t> input, std
 bool Scd41::write(uint16_t reg, std::chrono::milliseconds timeout) const {
     std::array<uint8_t, 2> data{static_cast<uint8_t>(reg >> 8), static_cast<uint8_t>(reg & 0xFF)};
 
-    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), timeout.count());
+    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), WRITE_READ_TIMEOUT.count());
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write for write command.");
+        ESP_LOGE(TAG, "Failed to write for write command with: %s", esp_err_to_name(result));
         return false;
     }
     return true;
@@ -169,9 +173,9 @@ bool Scd41::write(uint16_t reg, uint16_t payload, std::chrono::milliseconds time
     std::array<uint16_t, 1> payloadArr{payload};
     transform_to_send_data(payloadArr, data, 2);
 
-    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), timeout.count());
+    esp_err_t result = i2c_master_transmit(dev, data.data(), data.size(), WRITE_READ_TIMEOUT.count());
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write for write command.");
+        ESP_LOGE(TAG, "Failed to write for write command with: %s", esp_err_to_name(result));
         return false;
     }
     return true;
@@ -186,10 +190,10 @@ bool Scd41::write_read(uint16_t reg, std::span<uint16_t> response, std::chrono::
     // Response:
     std::vector<uint8_t> tmpResponse;
     tmpResponse.resize(response.size() * 3);
-    esp_err_t result = i2c_master_receive(dev, tmpResponse.data(), tmpResponse.size(), timeout.count());
+    esp_err_t result = i2c_master_receive(dev, tmpResponse.data(), tmpResponse.size(), WRITE_READ_TIMEOUT.count());
 
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write for write_read command.");
+        ESP_LOGE(TAG, "Failed to write for write_read command with: %s", esp_err_to_name(result));
         return false;
     }
 
@@ -303,6 +307,7 @@ double Scd41::get_temperature_offset() const {
 
 void Scd41::set_sensor_altitude(uint16_t altitude) const {
     ESP_LOGD(TAG, "Setting altitude...");
+
     if (!write(0x2427, altitude, std::chrono::milliseconds(1))) {
         ESP_LOGE(TAG, "Failed to perform write_read inside set_sensor_altitude.");
         return;
@@ -364,5 +369,14 @@ double Scd41::convert_measurement_to_hum(uint16_t mHum) {
 
 uint16_t Scd41::convert_measurement_to_co2(uint16_t mCo2) {
     return mCo2; // Nothing needs to be done here
+}
+
+bool Scd41::probe_device() const {
+    esp_err_t probResult = i2c_master_probe(bus, DEVICE_ADDR, WRITE_READ_TIMEOUT.count());
+    if (probResult != ESP_OK) {
+        ESP_LOGE(TAG, "Probing for device failed with: %s", esp_err_to_name(probResult));
+        return false;
+    }
+    return true;
 }
 } // namespace sensors

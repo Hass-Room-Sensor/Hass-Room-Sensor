@@ -24,6 +24,7 @@ struct measurement_t {
 class Scd41 {
   private:
     static constexpr uint8_t DEVICE_ADDR = 0x62;
+    static constexpr std::chrono::milliseconds WRITE_READ_TIMEOUT{2500};
     static const char* TAG;
 
     gpio_num_t sda;
@@ -59,6 +60,7 @@ class Scd41 {
     void set_sensor_altitude(uint16_t altitude) const;
     [[nodiscard]] uint16_t get_sensor_altitude() const;
     void persist_settings() const;
+    [[nodiscard]] bool probe_device() const;
 
   private:
     static uint8_t calc_crc(const std::span<uint8_t> data);
