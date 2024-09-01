@@ -137,15 +137,18 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     // Enable zigbee light sleep:
     esp_zb_sleep_enable(true);
+    ESP_LOGI(TAG, "ZigBee sleep enabled.");
 
     // ZigBee end device config:
     esp_zb_cfg_t zb_nwk_cfg{};
     zb_nwk_cfg.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
     zb_nwk_cfg.install_code_policy = false;
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
-    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(4000).count();
+    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(3000).count();
     esp_zb_init(&zb_nwk_cfg);
+    ESP_LOGI(TAG, "ZigBee init done.");
     esp_zb_sleep_set_threshold(std::chrono::milliseconds(50).count());
+    ESP_LOGI(TAG, "ZigBee sleep threshold set.");
 
     // Cluster list and temperature:
     esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();

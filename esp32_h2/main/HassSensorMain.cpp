@@ -51,7 +51,6 @@ void mainLoop() {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     } while (!measurement);
-    zigbee::ZDevice::get_instance()->init(0, 0, 0);
 
     ESP_LOGI(TAG, "Everything initialized.");
 
