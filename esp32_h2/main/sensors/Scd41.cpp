@@ -61,7 +61,9 @@ bool Scd41::init() const {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     ESP_LOGI(TAG, "Idle state reached.");
 
-    if (probe_device()) {
+    if (!probe_device()) {
+        ESP_LOGE(TAG, "Probing failed!");
+        return false;
     }
     ESP_LOGI(TAG, "Probing was successful!");
 

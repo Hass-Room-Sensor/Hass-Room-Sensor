@@ -30,7 +30,7 @@ void mainLoop() {
     zigbee::ZDevice::get_instance()->set_led(rgbLed);*/
 
     // Initialize the SCD41 sensor:
-    sensors::Scd41 scd41(GPIO_NUM_6, GPIO_NUM_7);
+    sensors::Scd41 scd41(GPIO_NUM_12, GPIO_NUM_22);
     if (!scd41.init()) {
         // rgbLed->on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");

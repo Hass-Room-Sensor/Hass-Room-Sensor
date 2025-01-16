@@ -43,9 +43,9 @@ class ZDevice {
     esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, DEFAULT_POWER_SOURCE};
     esp_zb_attribute_list_t* basicAttrList{nullptr};
 
-    std::vector<char> modelId;
-    std::vector<char> manufacturer;
-    std::vector<char> version;
+    std::vector<char> modelId{};
+    std::vector<char> manufacturer{};
+    std::vector<char> version{};
 
     // Cluster list:
     esp_zb_cluster_list_t* clusterList{nullptr};

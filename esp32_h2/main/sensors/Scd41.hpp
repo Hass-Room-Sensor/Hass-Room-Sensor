@@ -19,7 +19,7 @@ struct measurement_t {
 } __attribute__((aligned(32)));
 
 /**
- * Specification: https://sensirion.com/media/documents/48C4B7FB/6426E14D/CD_DS_SCD40_SCD41_Datasheet_D1_052023.pdf
+ * Specification: https://sensirion.com/products/catalog/SCD41
  **/
 class Scd41 {
   private:
