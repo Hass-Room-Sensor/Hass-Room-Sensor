@@ -179,7 +179,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ZDevice::get_instance()->reset();
     }
 
-    esp_zb_main_loop_iteration();
+    esp_zb_stack_main_loop();
 
     ESP_LOGI(TAG, "ZigBee task ended.");
 }
