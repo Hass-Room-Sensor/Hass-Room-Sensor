@@ -55,6 +55,8 @@ class ZDevice {
     esp_zb_ota_cluster_cfg_t otaCfg{};
     esp_zb_zcl_ota_upgrade_client_variable_t otaClientCfg{};
     esp_zb_attribute_list_t* otaAttrList{nullptr};
+    uint16_t otaUpgradeServerAddr = ESP_ZB_ZCL_OTA_UPGRADE_SERVER_ADDR_DEF_VALUE;
+    uint8_t otaUpgradeServerEp = ESP_ZB_ZCL_OTA_UPGRADE_SERVER_ENDPOINT_DEF_VALUE;
 
     // Temperature cluster information:
     esp_zb_temperature_meas_cluster_cfg_t tempCfg{};
@@ -114,7 +116,8 @@ class ZDevice {
     static void zb_main_task(void* arg);
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
-    static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* messsage);
+    static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message);
+    static esp_err_t on_ota_upgrade_query_image_resp(const esp_zb_zcl_ota_upgrade_query_image_resp_message_t* message);
 
     void set_model_id(const std::string& modelIdStr);
     void set_manufacturer(const std::string& manufacturerStr);

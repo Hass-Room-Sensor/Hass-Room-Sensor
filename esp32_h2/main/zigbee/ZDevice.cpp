@@ -27,6 +27,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <esp_check.h>
 #include <vector>
 
 namespace zigbee {
@@ -37,7 +38,7 @@ void ZDevice::set_led(std::shared_ptr<actuators::RgbLed> rgbLed) {
 }
 
 void ZDevice::set_led_color(const actuators::color_t& color) {
-    // rgbLed->on(color);
+    rgbLed->on(color);
 }
 
 const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
@@ -53,6 +54,8 @@ esp_err_t ZDevice::power_saver_init() {
                                  .min_freq_mhz = cur_cpu_freq_mhz,
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
                                  .light_sleep_enable = true
+#else
+                                 .light_sleep_enable = false
 #endif
     };
     rc = esp_pm_configure(&pm_config);
@@ -136,7 +139,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     }
 
     // Enable zigbee light sleep:
-    esp_zb_sleep_enable(true);
+    // esp_zb_sleep_enable(true);
     ESP_LOGI(TAG, "ZigBee sleep enabled.");
 
     // ZigBee end device config:
@@ -166,13 +169,13 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
-    esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID);
-    esp_zb_device_register(endpointList);
+    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID));
+    ESP_ERROR_CHECK(esp_zb_device_register(endpointList));
 
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
 
     // Advertise on all channels:
-    esp_zb_set_primary_network_channel_set(0x07FFF800);
+    ESP_ERROR_CHECK(esp_zb_set_primary_network_channel_set(0x07FFF800));
     ESP_ERROR_CHECK(esp_zb_start(false));
 
     if (ZDevice::get_instance()->resetGpio.is_powered()) {
@@ -190,6 +193,8 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
             return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
         case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
             return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_upgrade_value_message_t*>(message));
+        case ESP_ZB_CORE_OTA_UPGRADE_QUERY_IMAGE_RESP_CB_ID:
+            return on_ota_upgrade_query_image_resp(static_cast<const esp_zb_zcl_ota_upgrade_query_image_resp_message_t*>(message));
         default:
             ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
             break;
@@ -202,19 +207,57 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
     return ESP_OK;
 }
 
-esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* messsage) {
-    if (messsage->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
-        if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START) {
-            ESP_LOGI(TAG, "OTA started.");
-        } else if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE) {
-            ESP_LOGI(TAG, "OTA receiving...");
-        } else if (messsage->upgrade_status == ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH) {
-            ESP_LOGI(TAG, "OTA finished.");
-        } else {
-            ESP_LOGI(TAG, "OTA status: %d", messsage->upgrade_status);
+esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message) {
+    static uint32_t totalSize = 0;
+    static uint32_t offset = 0;
+    static esp_err_t ret = ESP_OK;
+
+    if (message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        switch (message->upgrade_status) {
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START:
+                ESP_LOGI(TAG, "OTA started.");
+                ESP_RETURN_ON_ERROR(ret, TAG, "Failed to begin OTA partition, status: %s", esp_err_to_name(ret));
+                break;
+
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE:
+                totalSize = message->ota_header.image_size;
+                offset += message->payload_size;
+                ESP_LOGI(TAG, "OTA Client receives data: progress [%ld/%ld]", offset, totalSize);
+                break;
+
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_APPLY:
+                ESP_LOGI(TAG, "OTA apply.");
+                break;
+
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_CHECK:
+                ret = offset == totalSize ? ESP_OK : ESP_FAIL;
+                ESP_LOGI(TAG, "OTA upgrade check status: %s", esp_err_to_name(ret));
+                break;
+
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH:
+                ESP_LOGI(TAG, "OTA finished: version: 0x%lx, manufacturer code: 0x%x, image type: 0x%x, total size: %ld bytes", message->ota_header.file_version, message->ota_header.manufacturer_code, message->ota_header.image_type, message->ota_header.image_size);
+                break;
+
+            default:
+                ESP_LOGW(TAG, "OTA unknown status: %d", message->upgrade_status);
+                break;
         }
     }
-    return ESP_OK;
+    return ret;
+}
+
+esp_err_t ZDevice::on_ota_upgrade_query_image_resp(const esp_zb_zcl_ota_upgrade_query_image_resp_message_t* message) {
+    esp_err_t ret = ESP_OK;
+    if (message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        ESP_LOGI(TAG, "Queried OTA image from address: 0x%04hx, endpoint: %d", message->server_addr.u.short_addr, message->server_endpoint);
+        ESP_LOGI(TAG, "Image version: 0x%lx, manufacturer code: 0x%x, image size: %ld", message->file_version, message->manufacturer_code, message->image_size);
+    }
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Approving OTA image upgrade.");
+    } else {
+        ESP_LOGI(TAG, "Rejecting OTA image upgrade, status: %s", esp_err_to_name(ret));
+    }
+    return ret;
 }
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
@@ -255,14 +298,18 @@ void ZDevice::setup_ota_cluster() {
     assert(clusterList);
 
     otaCfg.ota_upgrade_file_version = 1;
-    otaCfg.ota_upgrade_manufacturer = 42;
+    otaCfg.ota_upgrade_manufacturer = 0;
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
-    otaClientCfg.timer_query = ESP_ZB_ZCL_OTA_UPGRADE_QUERY_TIMER_COUNT_DEF;
+    otaClientCfg.timer_query = 1;
     otaClientCfg.hw_version = 1;
-    otaClientCfg.max_data_size = 64;
-    esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_CLIENT_DATA_ID, static_cast<void*>(&otaClientCfg));
+    otaClientCfg.max_data_size = 223;
+
+    ESP_ERROR_CHECK(esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_CLIENT_DATA_ID, static_cast<void*>(&otaClientCfg)));
+
+    ESP_ERROR_CHECK(esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_SERVER_ADDR_ID, static_cast<void*>(&otaUpgradeServerAddr)));
+    ESP_ERROR_CHECK(esp_zb_ota_cluster_add_attr(otaAttrList, ESP_ZB_ZCL_ATTR_OTA_UPGRADE_SERVER_ENDPOINT_ID, static_cast<void*>(&otaUpgradeServerEp)));
 
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_ota_cluster(clusterList, otaAttrList, ESP_ZB_ZCL_CLUSTER_CLIENT_ROLE));
 }
