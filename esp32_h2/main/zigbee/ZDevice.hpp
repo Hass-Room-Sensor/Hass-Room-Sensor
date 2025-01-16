@@ -1,7 +1,6 @@
 #pragma once
 
 #include "actuators/RgbLed.hpp"
-#include "esp_zigbee_ota.h"
 #include "sensors/GpioInput.hpp"
 
 #include <cstdint>
@@ -10,6 +9,7 @@
 #include <vector>
 
 extern "C" {
+#include "esp_zigbee_ota.h"
 #include "esp_zigbee_type.h"
 #include "ha/esp_zigbee_ha_standard.h"
 #include "hal/gpio_types.h"
