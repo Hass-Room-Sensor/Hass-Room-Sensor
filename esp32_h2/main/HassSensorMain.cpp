@@ -48,7 +48,7 @@ void mainLoop() {
             }
         } else {
             ESP_LOGI(TAG, "Waiting for initial measurements. SCD41 is not ready yet. Sleeping for a second before rechecking...");
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::seconds(10));
         }
     } while (!measurement);
 
@@ -65,7 +65,7 @@ void mainLoop() {
             zigbee::ZDevice::get_instance()->update_co2(measurement->co2);
             std::this_thread::sleep_for(std::chrono::seconds(60)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
         } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
     }
 }
