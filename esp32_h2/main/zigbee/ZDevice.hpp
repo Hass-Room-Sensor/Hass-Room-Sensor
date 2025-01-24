@@ -19,6 +19,25 @@ extern "C" {
 namespace zigbee {
 class ZDevice {
   public:
+    enum class DeviceState : uint8_t {
+        /**
+         * The state when the device is factory reset and not associated with any ZigBee network yet.
+         * Entering sleep is not possible in this state.
+         **/
+        SETUP,
+        /**
+         * The device is associated to a ZigBee network, but is not connected right now.
+         * The device actively tries to join the network again.
+         * Entering sleep is not possible in this state.
+         **/
+        CONNECTING,
+        /**
+         * The device is associated with a ZigBee network and connected to it.
+         * The device can go to sleep.
+         **/
+        CONNECTED
+    };
+
     static const char* TAG;
 
   private:
@@ -80,6 +99,9 @@ class ZDevice {
     // If set to high the ZigBee stack will be initialized as battery connected device.
     sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
 
+    // The curent device state. Used to ditermin if the device can go to sleep.
+    DeviceState deviceState{DeviceState::SETUP};
+
   public:
     ZDevice() = default;
     ZDevice(ZDevice&&) = default;
@@ -109,6 +131,8 @@ class ZDevice {
     void set_led_color(const actuators::color_t& color);
 
     void reset() const;
+
+    void set_device_state(DeviceState newState);
 
   private:
     static esp_err_t power_saver_init();
