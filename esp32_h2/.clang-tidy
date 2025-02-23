@@ -35,7 +35,8 @@ Checks: '*,
 -cppcoreguidelines-avoid-magic-numbers,
 -readability-magic-numbers,
 -cppcoreguidelines-avoid-do-while,
--cppcoreguidelines-pro-type-union-access
+-cppcoreguidelines-pro-type-union-access,
+-llvmlibc-inline-function-decl
 '
 WarningsAsErrors: '*'
 HeaderFilterRegex: 'src/*.hpp'
