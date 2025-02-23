@@ -31,7 +31,12 @@
 		{
 			"label": "🧼 | Clean",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 clean"
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py clean"
+		},
+		{
+			"label": "🧼 | Full Clean",
+			"type": "shell",
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py fullclean"
 		},
 		{
 			"label": "♻️ | Clean Flash",
