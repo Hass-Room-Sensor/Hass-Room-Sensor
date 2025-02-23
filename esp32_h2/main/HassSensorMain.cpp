@@ -2,7 +2,9 @@
 #include "esp_log.h"
 #include "hal/gpio_types.h"
 #include "nvs_flash.h"
+#include "sensors/IScd41.hpp"
 #include "sensors/Scd41.hpp"
+#include "sensors/Scd41Mock.hpp"
 #include "zigbee/ZDevice.hpp"
 #include <array>
 #include <cassert>
@@ -12,9 +14,10 @@
 #include <memory>
 #include <optional>
 #include <thread>
-
 namespace {
 const char* TAG = "hassSensor";
+
+constexpr bool USE_MOCK_SCD41 = true;
 } // namespace
 
 void mainLoop() {
@@ -30,8 +33,14 @@ void mainLoop() {
     zigbee::ZDevice::get_instance()->set_led(rgbLed);
 
     // Initialize the SCD41 sensor:
-    sensors::Scd41 scd41(GPIO_NUM_12, GPIO_NUM_22);
-    if (!scd41.init()) {
+    std::unique_ptr<sensors::IScd41> scd41{nullptr};
+    if (USE_MOCK_SCD41) {
+        scd41 = std::make_unique<sensors::Scd41Mock>();
+    } else {
+        scd41 = std::make_unique<sensors::Scd41>(GPIO_NUM_12, GPIO_NUM_22);
+    }
+
+    if (!scd41->init()) {
         rgbLed->on(actuators::color_t{30, 0, 0});
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
@@ -40,8 +49,8 @@ void mainLoop() {
     // Setup ZigBee device with initial measurements:
     std::optional<sensors::measurement_t> measurement = std::nullopt;
     do {
-        if (scd41.get_data_ready_status()) {
-            measurement = scd41.read_measurement();
+        if (scd41->get_data_ready_status()) {
+            measurement = scd41->read_measurement();
             if (measurement) {
                 ESP_LOGI(TAG, "Initial measurement: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
                 zigbee::ZDevice::get_instance()->init(measurement->temp, measurement->hum, measurement->co2);
@@ -57,7 +66,7 @@ void mainLoop() {
     // Main loop:
     while (true) {
         ESP_LOGI(TAG, "Data ready. Reading...");
-        measurement = scd41.read_measurement();
+        measurement = scd41->read_measurement();
         if (measurement) {
             ESP_LOGI(TAG, "[Measurement]: %d ppm, %.2lf °C, %.2lf %%", measurement->co2, measurement->temp, measurement->hum);
             zigbee::ZDevice::get_instance()->update_temp(measurement->temp);

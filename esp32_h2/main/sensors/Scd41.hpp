@@ -3,6 +3,7 @@
 #include "FreeRTOSConfig.h"
 #include "driver/i2c_master.h"
 #include "driver/i2c_types.h"
+#include "sensors/IScd41.hpp"
 #include "soc/gpio_num.h"
 #include <array>
 #include <chrono>
@@ -12,19 +13,14 @@
 #include <span>
 
 namespace sensors {
-struct measurement_t {
-    uint16_t co2;
-    double temp;
-    double hum;
-} __attribute__((aligned(32)));
-
 /**
  * Specification: https://sensirion.com/products/catalog/SCD41
  **/
-class Scd41 {
+class Scd41 : public IScd41 {
   private:
     static constexpr uint8_t DEVICE_ADDR = 0x62;
     static constexpr std::chrono::milliseconds WRITE_READ_TIMEOUT{2500};
+
     static const char* TAG;
 
     gpio_num_t sda;
@@ -43,24 +39,24 @@ class Scd41 {
     Scd41(const Scd41&) = default;
     Scd41& operator=(Scd41&&) = default;
     Scd41& operator=(const Scd41&) = default;
-    ~Scd41();
+    ~Scd41() override;
 
-    [[nodiscard]] bool init() const;
+    [[nodiscard]] bool init() const override;
 
-    [[nodiscard]] std::optional<measurement_t> read_measurement() const;
-    [[nodiscard]] bool get_data_ready_status() const;
-    [[nodiscard]] bool start_periodic_measurement() const;
-    [[nodiscard]] bool stop_periodic_measurement() const;
-    [[nodiscard]] bool perform_factory_reset() const;
-    [[nodiscard]] bool reinit() const;
-    [[nodiscard]] bool perform_self_test() const;
-    [[nodiscard]] uint64_t get_serial_number() const;
-    void set_temperature_offset(double offset) const;
-    [[nodiscard]] double get_temperature_offset() const;
-    void set_sensor_altitude(uint16_t altitude) const;
-    [[nodiscard]] uint16_t get_sensor_altitude() const;
-    void persist_settings() const;
-    [[nodiscard]] bool probe_device() const;
+    [[nodiscard]] std::optional<measurement_t> read_measurement() const override;
+    [[nodiscard]] bool get_data_ready_status() const override;
+    [[nodiscard]] bool start_periodic_measurement() const override;
+    [[nodiscard]] bool stop_periodic_measurement() const override;
+    [[nodiscard]] bool perform_factory_reset() const override;
+    [[nodiscard]] bool reinit() const override;
+    [[nodiscard]] bool perform_self_test() const override;
+    [[nodiscard]] uint64_t get_serial_number() const override;
+    void set_temperature_offset(double offset) const override;
+    [[nodiscard]] double get_temperature_offset() const override;
+    void set_sensor_altitude(uint16_t altitude) const override;
+    [[nodiscard]] uint16_t get_sensor_altitude() const override;
+    void persist_settings() const override;
+    [[nodiscard]] bool probe_device() const override;
 
   private:
     static uint8_t calc_crc(const std::span<uint8_t> data);
