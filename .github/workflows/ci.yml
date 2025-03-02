@@ -9,20 +9,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: espressif/idf:v5.2.2
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
       # Build the application
-      - name: Build
-        run: |
-          cd esp32_h2
-          bash /opt/esp/entrypoint.sh
-          /opt/esp/idf/tools/idf.py build
-
+      - name: esp-idf build
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.2.2
+          target: esp32h2
+          path: 'esp32_h2'
+  
       - name: Install OTA Dependencies
         run: |
           pip install zigpy-cli zigpy
