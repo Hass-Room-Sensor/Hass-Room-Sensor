@@ -21,7 +21,7 @@ jobs:
         run: |
           cd esp32_h2
           bash /opt/esp/entrypoint.sh
-          idf.py build
+          /opt/esp/idf/tools/idf.py build
 
       - name: Install OTA Dependencies
         run: |
