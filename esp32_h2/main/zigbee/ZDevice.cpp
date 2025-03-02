@@ -269,6 +269,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
                 assert(otaPartition);
                 ret = esp_ota_begin(otaPartition, 0, &otaHandle);
                 ESP_RETURN_ON_ERROR(ret, TAG, "Failed to begin OTA partition, status: %s", esp_err_to_name(ret));
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::OTA);
                 break;
 
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE:
@@ -312,6 +313,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
                 totalSize = 0;
                 zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
                 ESP_LOGE(TAG, "OTA aborted with: %s", esp_err_to_name(ret));
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
                 break;
 
             default:
@@ -373,7 +375,7 @@ void ZDevice::setup_ota_cluster() {
     assert(!otaAttrList);
     assert(clusterList);
 
-    otaCfg.ota_upgrade_file_version = 2;
+    otaCfg.ota_upgrade_file_version = 1;
     otaCfg.ota_upgrade_manufacturer = 0;
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
@@ -424,6 +426,7 @@ void ZDevice::set_device_state(DeviceState newState) {
     // The device can only go to sleep when it is actually connected to a network.
     switch (deviceState) {
         case DeviceState::SETUP:
+        case DeviceState::OTA:
         case DeviceState::CONNECTING:
             esp_zb_sleep_enable(false);
             ESP_LOGI(TAG, "ZigBee sleep disabled.");

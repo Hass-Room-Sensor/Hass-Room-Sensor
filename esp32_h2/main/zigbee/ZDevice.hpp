@@ -35,7 +35,12 @@ class ZDevice {
          * The device is associated with a ZigBee network and connected to it.
          * The device can go to sleep.
          **/
-        CONNECTED
+        CONNECTED,
+        /**
+         * A OTA (Over The Air) update process is running.
+         * The device can not go to sleep.
+         **/
+        OTA
     };
 
     static const char* TAG;
