@@ -38,8 +38,8 @@ jobs:
           cat ota.json
           file_size=$(stat -c %s "hass_sensor.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
-          cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > firmware.json
-          cat firmware.json
+          cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > index.json
+          cat index.json
 
       - name: "Upload OTA artifacts"
         uses: actions/upload-artifact@v4
