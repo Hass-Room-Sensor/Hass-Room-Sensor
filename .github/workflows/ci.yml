@@ -19,10 +19,8 @@ jobs:
       # Build the application
       - name: Build
         run: |
-          apt install -y libfile-pushd-perl
-          pushd esp32_h2
+          cd esp32_h2
           idf.py build
-          popd
 
       - name: Install OTA Dependencies
         run: |
@@ -33,11 +31,10 @@ jobs:
         run: |
           mkdir ota
           cp esp32_h2/build/hass_sensor.bin ota/hass_sensor.bin
-          pushd ota
+          cd ota
           python image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.bin
           zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" *.bin > ota.json
           cat ota.json
-          popd
 
       - name: "Upload OTA artifacts"
         uses: actions/upload-artifact@v4
