@@ -1,0 +1,46 @@
+name: ESP32 CI Build with Docker
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.2.2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Build the application
+      - name: Build
+        run: |
+          pushd esp32_h2
+          idf.py build
+          popd
+
+      - name: Install OTA Dependencies
+        run: |
+          pip install zigpy-cli zigpy
+          wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/main/tools/image_builder_tool/image_builder_tool.py
+
+      - name: Create OTA
+        run: |
+          mkdir ota
+          cp esp32_h2/build/hass_sensor.bin ota/hass_sensor.bin
+          pushd ota
+          python image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.bin
+          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" *.bin > ota.json
+          cat ota.json
+          popd
+
+      - name: "Upload OTA artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-data
+          path: ./ota
+
