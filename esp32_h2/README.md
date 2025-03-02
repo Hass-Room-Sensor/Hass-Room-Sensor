@@ -8,7 +8,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 |-----------------|--------|-------|
 | MQTT            | TODO   |       |
 | REST            | TODO   |       |
-| ZigBee          | Supported | Temperature and Humidity |
+| ZigBee          | Supported | Temperature, Humidity, CO2, OTA |
 | Thread (Matter) | TODO   |       |
 
 ## ESP32 Pinout
