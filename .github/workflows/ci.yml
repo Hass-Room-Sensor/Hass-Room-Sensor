@@ -34,7 +34,7 @@ jobs:
           cp esp32_h2/build/hass_sensor.bin ota/hass_sensor.ota
           cd ota
           python ../image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.ota
-          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" *.bin > ota.json
+          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor.ota > ota.json
           cat ota.json
 
       - name: "Upload OTA artifacts"
