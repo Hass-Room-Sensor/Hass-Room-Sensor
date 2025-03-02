@@ -195,8 +195,12 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
             return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_upgrade_value_message_t*>(message));
         case ESP_ZB_CORE_OTA_UPGRADE_QUERY_IMAGE_RESP_CB_ID:
             return on_ota_upgrade_query_image_resp(static_cast<const esp_zb_zcl_ota_upgrade_query_image_resp_message_t*>(message));
+        case ESP_ZB_CORE_CMD_DEFAULT_RESP_CB_ID:
+            // const esp_zb_zcl_cmd_default_resp_message_t* msg = static_cast<const esp_zb_zcl_cmd_default_resp_message_t*>(message);
+            ESP_LOGW(TAG, "Receive unhandled Zigbee 'ESP_ZB_CORE_CMD_DEFAULT_RESP_CB_ID' callback.");
+            break;
         default:
-            ESP_LOGI(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
+            ESP_LOGW(TAG, "Receive unhandled Zigbee action(0x%x) callback", callback_id);
             break;
     }
     return ESP_OK;
@@ -301,6 +305,13 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
 
                 ESP_LOGI(TAG, "OTA finished: version: 0x%lx, manufacturer code: 0x%x, image type: 0x%x, total size: %ld bytes", message->ota_header.file_version, message->ota_header.manufacturer_code, message->ota_header.image_type, message->ota_header.image_size);
                 esp_restart();
+                break;
+
+            case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ABORT:
+                offset = 0;
+                totalSize = 0;
+                zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
+                ESP_LOGE(TAG, "OTA aborted with: %s", esp_err_to_name(ret));
                 break;
 
             default:
