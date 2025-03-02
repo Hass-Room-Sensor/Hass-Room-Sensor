@@ -1,6 +1,7 @@
 #include "zigbee/ZDevice.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
@@ -206,15 +207,63 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
     return ESP_OK;
 }
 
+esp_err_t ZDevice::on_ota_upgrade_data_message(uint32_t totalSize, const void* payload, uint16_t payloadSize, void** outbuf, uint16_t* outlen) {
+    // Hardcoded OTA element format header size include tag identifier and length field.
+    // Source: https://github.com/espressif/esp-zigbee-sdk/blob/5e065f3285f89a32f8dec84e42227049af6d4324/examples/esp_zigbee_ota/ota_client/main/esp_ota_client.h#L55C9-L55C31
+    constexpr uint16_t OTA_ELEMENT_HEADER_LEN = 6;
+
+    void* dataBuf = nullptr;
+    uint16_t dataLen;
+
+    if (!otaStatus.tagReceived) {
+        uint32_t length = 0;
+        if (!payload || payloadSize <= OTA_ELEMENT_HEADER_LEN) {
+            ESP_RETURN_ON_ERROR(ESP_ERR_INVALID_ARG, TAG, "Invalid element format");
+        }
+
+        otaStatus.tag = *(const uint16_t*) payload;
+        length = *(const uint32_t*) (payload + sizeof(otaStatus.tag));
+        if ((length + OTA_ELEMENT_HEADER_LEN) != totalSize) {
+            ESP_RETURN_ON_ERROR(ESP_ERR_INVALID_ARG, TAG, "Invalid element length [%ld/%ld]", length, totalSize);
+        }
+
+        otaStatus.tagReceived = true;
+
+        dataBuf = (void*) (payload + OTA_ELEMENT_HEADER_LEN);
+        dataLen = payloadSize - OTA_ELEMENT_HEADER_LEN;
+    } else {
+        dataBuf = (void*) payload;
+        dataLen = payloadSize;
+    }
+
+    switch (otaStatus.tag) {
+        case 0: // upgrade image
+            *outbuf = dataBuf;
+            *outlen = dataLen;
+            break;
+        default:
+            ESP_RETURN_ON_ERROR(ESP_ERR_INVALID_ARG, TAG, "Unsupported element tag identifier %d", otaStatus.tag);
+            break;
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message) {
     static uint32_t totalSize = 0;
     static uint32_t offset = 0;
     static esp_err_t ret = ESP_OK;
 
+    static esp_ota_handle_t otaHandle{};
+    static const esp_partition_t* otaPartition{nullptr};
+
     if (message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS) {
         switch (message->upgrade_status) {
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START:
                 ESP_LOGI(TAG, "OTA started.");
+                otaPartition = esp_ota_get_next_update_partition(NULL);
+                assert(otaPartition);
+                ret = esp_ota_begin(otaPartition, 0, &otaHandle);
                 ESP_RETURN_ON_ERROR(ret, TAG, "Failed to begin OTA partition, status: %s", esp_err_to_name(ret));
                 break;
 
@@ -222,6 +271,13 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
                 totalSize = message->ota_header.image_size;
                 offset += message->payload_size;
                 ESP_LOGI(TAG, "OTA Client receives data: progress [%ld/%ld]", offset, totalSize);
+                if (message->payload_size > 0 && message->payload) {
+                    uint16_t payloadSize = 0;
+                    void* payload = nullptr;
+                    ret = zigbee::ZDevice::get_instance()->on_ota_upgrade_data_message(totalSize, message->payload, message->payload_size, &payload, &payloadSize);
+                    ESP_RETURN_ON_ERROR(ret, TAG, "Failed to find/extract OTA data from element. Status: %s", esp_err_to_name(ret));
+                    ret = esp_ota_write(otaHandle, payload, payloadSize);
+                }
                 break;
 
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_APPLY:
@@ -230,11 +286,21 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
 
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_CHECK:
                 ret = offset == totalSize ? ESP_OK : ESP_FAIL;
+                offset = 0;
+                totalSize = 0;
+                zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
                 ESP_LOGI(TAG, "OTA upgrade check status: %s", esp_err_to_name(ret));
                 break;
 
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_FINISH:
+                ret = esp_ota_end(otaHandle);
+                ESP_RETURN_ON_ERROR(ret, TAG, "Failed to end OTA with status: %s", esp_err_to_name(ret));
+
+                ret = esp_ota_set_boot_partition(otaPartition);
+                ESP_RETURN_ON_ERROR(ret, TAG, "Failed to set OTA boot partition with status: %s", esp_err_to_name(ret));
+
                 ESP_LOGI(TAG, "OTA finished: version: 0x%lx, manufacturer code: 0x%x, image type: 0x%x, total size: %ld bytes", message->ota_header.file_version, message->ota_header.manufacturer_code, message->ota_header.image_type, message->ota_header.image_size);
+                esp_restart();
                 break;
 
             default:
@@ -296,7 +362,7 @@ void ZDevice::setup_ota_cluster() {
     assert(!otaAttrList);
     assert(clusterList);
 
-    otaCfg.ota_upgrade_file_version = 1;
+    otaCfg.ota_upgrade_file_version = 2;
     otaCfg.ota_upgrade_manufacturer = 0;
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);

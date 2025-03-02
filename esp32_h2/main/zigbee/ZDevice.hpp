@@ -102,6 +102,12 @@ class ZDevice {
     // The curent device state. Used to ditermin if the device can go to sleep.
     DeviceState deviceState{DeviceState::SETUP};
 
+    struct OtaStatus {
+        uint16_t tag{0};
+        bool tagReceived{false};
+    } __attribute__((aligned(4)));
+    OtaStatus otaStatus{};
+
   public:
     ZDevice() = default;
     ZDevice(ZDevice&&) = default;
@@ -141,6 +147,7 @@ class ZDevice {
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
     static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message);
+    esp_err_t on_ota_upgrade_data_message(uint32_t totalSize, const void* payload, uint16_t payloadSize, void** outbuf, uint16_t* outlen);
     static esp_err_t on_ota_upgrade_query_image_resp(const esp_zb_zcl_ota_upgrade_query_image_resp_message_t* message);
 
     void set_model_id(const std::string& modelIdStr);

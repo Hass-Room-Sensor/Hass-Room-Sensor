@@ -16,4 +16,4 @@ idf_component_register(SRCS "HassSensorMain.cpp"
                             "zigbee/ZDevice.hpp"
                             "zigbee/ZDevice.cpp"
                        INCLUDE_DIRS "."
-                       PRIV_REQUIRES driver nvs_flash)
+                       PRIV_REQUIRES driver nvs_flash app_update)
