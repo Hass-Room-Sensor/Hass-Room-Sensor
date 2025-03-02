@@ -19,6 +19,7 @@ jobs:
       # Build the application
       - name: Build
         run: |
+          apt install -y libfile-pushd-perl
           pushd esp32_h2
           idf.py build
           popd
