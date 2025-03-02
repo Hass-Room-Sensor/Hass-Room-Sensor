@@ -36,6 +36,10 @@ jobs:
           python ../image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.ota
           zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor.ota > ota.json
           cat ota.json
+          file_size=$(stat -c %s "hass_sensor.ota")
+          # Add the missing 'file_size' property and wrap it into 'firmwares'.
+          cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > firmware.json
+          cat firmware.json
 
       - name: "Upload OTA artifacts"
         uses: actions/upload-artifact@v4
