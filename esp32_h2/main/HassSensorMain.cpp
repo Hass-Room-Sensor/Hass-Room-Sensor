@@ -24,6 +24,8 @@ constexpr bool USE_MOCK_SCD41 = false;
 void mainLoop() {
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
 
+    ESP_LOGI(TAG, "Starting: %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
+
     // Initialize the flash:
     ESP_ERROR_CHECK(nvs_flash_init());
 

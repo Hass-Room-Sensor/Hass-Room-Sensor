@@ -1,4 +1,4 @@
-# HASS_EnviromentSensor
+# HASS Environment Sensor
 Home Assistant (ESPHome) Environment Sensor
 
 ## Docs

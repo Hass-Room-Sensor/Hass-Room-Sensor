@@ -166,7 +166,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ZDevice::get_instance()->setup_co2_cluster();
 
     // Basic information:
-    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.1.0");
+    std::array<char, 32> version{};
+    snprintf(version.data(), version.size(), "%d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
+    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", std::string{version.data()});
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
     ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID));
@@ -397,9 +399,17 @@ void ZDevice::setup_ota_cluster() {
     assert(!otaAttrList);
     assert(clusterList);
 
-    otaCfg.ota_upgrade_file_version = 2;
-    otaCfg.ota_upgrade_manufacturer = 0;
+    otaCfg.ota_upgrade_file_version = (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR << 24) | (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR << 12) | (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
+    otaCfg.ota_upgrade_manufacturer = CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER;
+
+#ifdef CONFIG_IDF_TARGET_ESP32H2
+    otaCfg.ota_upgrade_image_type = 1;
+#elif CONFIG_IDF_TARGET_ESP32C6
+    otaCfg.ota_upgrade_image_type = 2;
+#else
     otaCfg.ota_upgrade_image_type = 0;
+#endif
+
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
     otaClientCfg.timer_query = 1;
