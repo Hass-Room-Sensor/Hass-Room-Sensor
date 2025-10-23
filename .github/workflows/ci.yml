@@ -47,7 +47,7 @@ jobs:
           ver_patch=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH=' "$SDKCFG" | cut -d= -f2)
 
           # Normalize manufacturer to a bash-friendly integer while preserving hex if given (e.g., 0x0)
-          # image_builder_tool accepts hex (0x...) or decimal; we’ll pass hex for readability.
+          # image_builder_tool accepts hex (0x...) or decimal; we'll pass hex for readability.
           manuf_id="$manuf_id_raw"
 
           # Compute Zigbee OTA version: (major << 24) | (minor << 12) | patch
