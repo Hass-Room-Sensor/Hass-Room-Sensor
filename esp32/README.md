@@ -41,7 +41,7 @@ Documentation: https://espressif-docs.readthedocs-hosted.com/projects/esp-dev-ki
 
 ```bash
 # Build
-cd esp32_h2/
+cd esp32/
 
 # Select a debug or release build
 export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug"
@@ -60,7 +60,7 @@ The following commands show how to build and flash via JTAG.
 
 ```bash
 # Build
-cd esp32_h2/
+cd esp32/
 
 # Select a debug or release build
 export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug"
@@ -84,7 +84,7 @@ This guide details how to build an Over The Air (OTA) update for use within Home
 ```bash
 # Clone the repository and change into it
 git clone https://github.com/electronics4fun/HASS_EnviromentSensor.git
-cd HASS_EnviromentSensor/esp32_h2
+cd HASS_EnviromentSensor/esp32
 
 # Select a debug or release build
 export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug"

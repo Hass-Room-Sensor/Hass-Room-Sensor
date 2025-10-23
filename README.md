@@ -26,4 +26,4 @@ Home Assistant (ESPHome) Environment Sensor
 
 ## Flashing and Building
 
-For this please take a look at [`esp32_h2/README.md`](esp32_h2/README.md).
+For this please take a look at [`esp32/README.md`](esp32/README.md).

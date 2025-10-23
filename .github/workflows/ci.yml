@@ -20,7 +20,7 @@ jobs:
         with:
           esp_idf_version: v5.5.1
           target: esp32h2
-          path: esp32_h2
+          path: esp32
           extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"'
   
       - name: Install OTA Dependencies
@@ -31,8 +31,8 @@ jobs:
       - name: Create OTA
         run: |
           mkdir ota
-          cp esp32_h2/build/hass_sensor.bin ota/hass_sensor.bin
-          cp esp32_h2/build/hass_sensor.bin ota/hass_sensor.ota
+          cp esp32/build/hass_sensor.bin ota/hass_sensor.bin
+          cp esp32/build/hass_sensor.bin ota/hass_sensor.ota
           cd ota
           python ../image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.ota
           zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor.ota > ota.json
