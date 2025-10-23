@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       # Build the application
       - name: esp-idf build
@@ -35,9 +35,9 @@ jobs:
       - name: Create OTA
         run: |
           mkdir ota
-          cp esp32/build/hass_sensor.bin ota/hass_sensor_${{ matrix.esp32_target }}.bin
-          cp esp32/build/hass_sensor.bin ota/hass_sensor_${{ matrix.esp32_target }}.ota
-          cd ota
+          cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.bin
+          cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.ota
+          cd ota_${{ matrix.esp32_target }}
           python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
           zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
           file_size=$(stat -c %s "hass_sensor_${{ matrix.esp32_target }}.ota")
@@ -48,6 +48,55 @@ jobs:
       - name: "Upload OTA artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: ota-data
-          path: ./ota
+          name: ota_data_${{ matrix.esp32_target }}
+          path: ./ota_${{ matrix.esp32_target }}
 
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download all OTA artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: ota_data_*
+          merge-multiple: true
+          path: merged_ota
+
+      - name: Install jq (if needed)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
+
+      - name: Merge index.json files on `firmwares`
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          mapfile -t INDEXES < <(find merged_ota -type f -name "index.json" | sort)
+          if [ "${#INDEXES[@]}" -eq 0 ]; then
+            echo "No index.json files found to merge."
+            exit 1
+          fi
+
+          # Merge: {firmwares: (index1.firmwares + index2.firmwares + ...)}
+          jq -s '{firmwares: (map(.firmwares) | add)}' "${INDEXES[@]}" > merged_ota/index.merged.json
+          
+          # Optional: pretty print
+          jq . merged_ota/index.merged.json > merged_ota/index.json
+
+      - name: Collect binaries alongside merged index
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          mkdir -p dist
+          # Copy all OTA payloads and bins (if you want them in one bundle)
+          cp -v merged_ota/**/*.ota dist/ || true
+          cp -v merged_ota/**/*.bin dist/ || true
+          cp -v merged_ota/index.json dist/
+
+      - name: Upload merged OTA bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-merged
+          path: dist
