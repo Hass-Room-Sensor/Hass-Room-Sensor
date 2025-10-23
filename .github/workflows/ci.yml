@@ -20,7 +20,8 @@ jobs:
         with:
           esp_idf_version: v5.5.1
           target: esp32h2
-          path: 'esp32_h2'
+          path: esp32_h2
+          extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"'
   
       - name: Install OTA Dependencies
         run: |
