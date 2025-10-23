@@ -35,11 +35,39 @@ jobs:
 
       - name: Create OTA
         run: |
+          set -euo pipefail
+
+          # Where the sdkconfig lives (adjust if different)
+          SDKCFG="esp32/sdkconfig"
+
+          # Parse manufacturer + semver parts from sdkconfig
+          manuf_id_raw=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER=' "$SDKCFG" | cut -d= -f2)
+          ver_major=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR=' "$SDKCFG" | cut -d= -f2)
+          ver_minor=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR=' "$SDKCFG" | cut -d= -f2)
+          ver_patch=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH=' "$SDKCFG" | cut -d= -f2)
+
+          # Normalize manufacturer to a bash-friendly integer while preserving hex if given (e.g., 0x0)
+          # image_builder_tool accepts hex (0x...) or decimal; we’ll pass hex for readability.
+          manuf_id="$manuf_id_raw"
+
+          # Compute Zigbee OTA version: (major << 24) | (minor << 12) | patch
+          version_dec=$(( (ver_major << 24) | (ver_minor << 12) | ver_patch ))
+          version_hex=$(printf '0x%X' "$version_dec")
+
+          # Map each esp32_target to a unique image-type
+          case "${{ matrix.esp32_target }}" in
+            esp32h2) image_type=0x1 ;;
+            esp32c6) image_type=0x2 ;;
+            *) echo "Unknown target: ${{ matrix.esp32_target }}" >&2; exit 1 ;;
+          esac
+
+          echo "Using manuf-id=${manuf_id}, image-type=${image_type}, version=${version_hex} (dec=${version_dec})"
+
           mkdir ota_${{ matrix.esp32_target }}
           cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.bin
           cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.ota
           cd ota_${{ matrix.esp32_target }}
-          python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
+          python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id ${manuf_id} --image-type ${image_type} --version ${version_hex} --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
           zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
           file_size=$(stat -c %s "hass_sensor_${{ matrix.esp32_target }}.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
