@@ -83,7 +83,7 @@ jobs:
           # Merge: {firmwares: (index1.firmwares + index2.firmwares + ...)}
           jq -s '{firmwares: (map(.firmwares) | add)}' "${INDEXES[@]}" > merged_ota/index.merged.json
           
-          # Optional: pretty print
+          # Pretty print
           jq . merged_ota/index.merged.json > merged_ota/index.json
 
       - name: Collect binaries alongside merged index
@@ -92,9 +92,7 @@ jobs:
           shopt -s globstar nullglob
           mkdir -p dist
           # Copy all OTA payloads and bins (if you want them in one bundle)
-          cp -v merged_ota/**/*.ota dist/ || true
-          cp -v merged_ota/**/*.bin dist/ || true
-          cp -v merged_ota/index.json dist/
+          cp -v merged_ota/**/*.ota dist/
 
       - name: Upload merged OTA bundle
         uses: actions/upload-artifact@v4
