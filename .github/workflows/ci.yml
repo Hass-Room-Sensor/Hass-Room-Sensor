@@ -60,7 +60,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: ota_data_*
-          merge-multiple: true
+          merge-multiple: false
           path: merged_ota
 
       - name: Install jq (if needed)
