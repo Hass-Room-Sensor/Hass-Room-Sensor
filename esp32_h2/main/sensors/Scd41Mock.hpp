@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sensors/IScd41.hpp"
+#include "sensors/AbstractScd41.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -9,7 +9,7 @@ namespace sensors {
 /**
  * Mock without hardware for the SCD41.
  **/
-class Scd41Mock : public IScd41 {
+class Scd41Mock : public AbstractScd41 {
   public:
     Scd41Mock() = default;
     Scd41Mock(Scd41Mock&&) = default;

@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "hal/gpio_types.h"
 #include "nvs_flash.h"
-#include "sensors/IScd41.hpp"
+#include "sensors/AbstractScd41.hpp"
 #include "sensors/Scd41.hpp"
 #include "sensors/Scd41Mock.hpp"
 #include "zigbee/ZDevice.hpp"
@@ -17,7 +17,7 @@
 namespace {
 const char* TAG = "hassSensor";
 
-constexpr bool USE_MOCK_SCD41 = true;
+constexpr bool USE_MOCK_SCD41 = false;
 } // namespace
 
 void mainLoop() {
@@ -33,7 +33,7 @@ void mainLoop() {
     zigbee::ZDevice::get_instance()->set_led(rgbLed);
 
     // Initialize the SCD41 sensor:
-    std::unique_ptr<sensors::IScd41> scd41{nullptr};
+    std::unique_ptr<sensors::AbstractScd41> scd41{nullptr};
     if (USE_MOCK_SCD41) {
         scd41 = std::make_unique<sensors::Scd41Mock>();
     } else {

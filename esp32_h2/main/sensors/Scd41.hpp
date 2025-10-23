@@ -3,7 +3,7 @@
 #include "FreeRTOSConfig.h"
 #include "driver/i2c_master.h"
 #include "driver/i2c_types.h"
-#include "sensors/IScd41.hpp"
+#include "sensors/AbstractScd41.hpp"
 #include "soc/gpio_num.h"
 #include <array>
 #include <chrono>
@@ -16,7 +16,7 @@ namespace sensors {
 /**
  * Specification: https://sensirion.com/products/catalog/SCD41
  **/
-class Scd41 : public IScd41 {
+class Scd41 : public AbstractScd41 {
   private:
     static constexpr uint8_t DEVICE_ADDR = 0x62;
     static constexpr std::chrono::milliseconds WRITE_READ_TIMEOUT{2500};

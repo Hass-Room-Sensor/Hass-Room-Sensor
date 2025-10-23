@@ -78,10 +78,13 @@ bool Scd41::init() const {
 
     // Test if everything works:
     if (!perform_self_test()) {
-        ESP_LOGE(TAG, "Self test failed.");
-        return false;
+        ESP_LOGW(TAG, "Self test failed. Trying to recover sensor...");
+        if (!try_recover()) {
+            ESP_LOGE(TAG, "Recovering sensor failed. The sensor might report wrong values!");
+        }
+    } else {
+        ESP_LOGI(TAG, "Self test done.");
     }
-    ESP_LOGI(TAG, "Self test done.");
 
     // ESP_LOGI(TAG, "Reinit started...");
     // if (!reinit()) {
@@ -274,7 +277,11 @@ bool Scd41::perform_self_test() const {
         ESP_LOGE(TAG, "Failed to perform self test.");
         return false;
     }
-    return response[0] == 0;
+    if (response[0] == 0) {
+        return true;
+    }
+    ESP_LOGD(TAG, "response[0] = '0x%02x'", response[0]);
+    return false;
 }
 
 uint64_t Scd41::get_serial_number() const {
