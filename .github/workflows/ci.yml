@@ -85,8 +85,6 @@ jobs:
           
           # Pretty print
           jq . merged_ota/index.merged.json > merged_ota/index.json
-          cat merged_ota/index.json
-          ls -l merged_ota
 
       - name: Collect binaries alongside merged index
         shell: bash
@@ -94,8 +92,6 @@ jobs:
           shopt -s globstar nullglob
           mkdir -p dist
           # Copy all OTA payloads and bins (if you want them in one bundle)
-          cat merged_ota/index.json
-          ls -l merged_ota
           cp -v merged_ota/**/*.ota dist/
           cp -v merged_ota/index.json dist/
 
