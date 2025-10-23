@@ -174,8 +174,12 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
 
-    // Advertise on all channels:
-    ESP_ERROR_CHECK(esp_zb_set_primary_network_channel_set(0x07FFF800));
+    // Advertise on all 2.4 GHz channels:
+    ESP_ERROR_CHECK(esp_zb_set_channel_mask(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
+    ESP_ERROR_CHECK(esp_zb_set_primary_network_channel_set(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
+    ESP_ERROR_CHECK(esp_zb_set_secondary_network_channel_set(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
+
+    // Start:
     ESP_ERROR_CHECK(esp_zb_start(false));
 
     if (ZDevice::get_instance()->resetGpio.is_powered()) {
@@ -340,7 +344,6 @@ esp_err_t ZDevice::on_ota_upgrade_query_image_resp(const esp_zb_zcl_ota_upgrade_
 
 void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t mode_mask) {
     zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
-    ESP_LOGI(TAG, "Rejoining network...");
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
 }
 
@@ -450,32 +453,35 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
 
     switch (sigType) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
+            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
             zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 30});
             ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized");
-            esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
+            esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
             break;
 
         case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
         case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (err_status == ESP_OK) {
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 0, 30});
-                ESP_LOGI(zigbee::ZDevice::TAG, "Device started up in %s factory-reset mode", esp_zb_bdb_is_factory_new() ? "" : "non");
+                ESP_LOGI(zigbee::ZDevice::TAG, "Device state: %s", esp_zb_bdb_is_factory_new() ? "factory new" : "configured");
                 if (esp_zb_bdb_is_factory_new()) {
                     zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::SETUP);
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Start network steering");
-                    esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
-                } else {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Device rebooted or woke up from sleep.");
-                    // This has to be done here as well. Else the device won't connect...
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
                     esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
+                } else {
+                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
+                    esp_zb_ieee_addr_t extended_pan_id;
+                    esp_zb_get_extended_pan_id(extended_pan_id);
+                    zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 30, 0});
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Rejoined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
                 }
             } else {
                 /* commissioning failed */
                 zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 0});
-                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s). Restarting...", esp_err_to_name(err_status));
-                esp_restart();
+                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s).", esp_err_to_name(err_status));
+                ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
+                esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
             }
             break;
 
@@ -489,7 +495,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             } else {
                 zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 20, 0});
-                ESP_LOGI(zigbee::ZDevice::TAG, "Network steering was not successful (status: %s)", esp_err_to_name(err_status));
+                ESP_LOGI(zigbee::ZDevice::TAG, "Rejoining a known network was not successful (status: %s). Attempting to join again...", esp_err_to_name(err_status));
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             }
             break;
