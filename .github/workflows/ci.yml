@@ -93,6 +93,7 @@ jobs:
           mkdir -p dist
           # Copy all OTA payloads and bins (if you want them in one bundle)
           cp -v merged_ota/**/*.ota dist/
+          cp merged_ota/index.json dist/
 
       - name: Upload merged OTA bundle
         uses: actions/upload-artifact@v4
