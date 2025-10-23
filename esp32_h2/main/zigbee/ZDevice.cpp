@@ -166,7 +166,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ZDevice::get_instance()->setup_co2_cluster();
 
     // Basic information:
-    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.0.0");
+    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", "1.1.0");
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
     ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID));
@@ -397,7 +397,7 @@ void ZDevice::setup_ota_cluster() {
     assert(clusterList);
 
     otaCfg.ota_upgrade_file_version = 1;
-    otaCfg.ota_upgrade_manufacturer = 0;
+    otaCfg.ota_upgrade_manufacturer = 1;
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
