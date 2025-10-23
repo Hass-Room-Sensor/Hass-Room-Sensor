@@ -16,17 +16,17 @@
 		{
 			"label": "📸 | Flash",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 flash"
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash"
 		},
 		{
 			"label": "👁️ | Monitor",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 monitor"
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 monitor"
 		},
 		{
 			"label": "📸 & 👁️ | Flash & Monitor",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 flash monitor"
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash monitor"
 		},
 		{
 			"label": "🧼 | Clean",
@@ -41,7 +41,7 @@
 		{
 			"label": "♻️ | Clean Flash",
 			"type": "shell",
-			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyUSB0 erase-flash"
+			"command": ". $HOME/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 erase-flash"
 		}
 	]
 }

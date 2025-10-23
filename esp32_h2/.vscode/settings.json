@@ -83,5 +83,6 @@
         "valarray": "cpp",
         "variant": "cpp",
         "text_encoding": "cpp"
-    }
+    },
+    "idf.flashType": "UART"
 }
