@@ -81,6 +81,9 @@ class ZDevice {
     esp_zb_attribute_list_t* otaAttrList{nullptr};
     uint16_t otaUpgradeServerAddr = ESP_ZB_ZCL_OTA_UPGRADE_SERVER_ADDR_DEF_VALUE;
     uint8_t otaUpgradeServerEp = ESP_ZB_ZCL_OTA_UPGRADE_SERVER_ENDPOINT_DEF_VALUE;
+    // Hardcoded OTA element format header size include tag identifier and length field.
+    // Source: https://github.com/espressif/esp-zigbee-sdk/blob/5e065f3285f89a32f8dec84e42227049af6d4324/examples/esp_zigbee_ota/ota_client/main/esp_ota_client.h#L55C9-L55C31
+    static constexpr uint16_t OTA_ELEMENT_HEADER_LEN = 6;
 
     // Temperature cluster information:
     esp_zb_temperature_meas_cluster_cfg_t tempCfg{};
@@ -153,7 +156,7 @@ class ZDevice {
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callback_id, const void* message);
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg);
     static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message);
-    esp_err_t on_ota_upgrade_data_message(uint32_t totalSize, const void* payload, uint16_t payloadSize, void** outbuf, uint16_t* outlen);
+    esp_err_t on_ota_upgrade_data_message(uint32_t totalSize, void* payload, uint16_t payloadSize, void** outbuf, uint16_t* outlen);
     static esp_err_t on_ota_upgrade_query_image_resp(const esp_zb_zcl_ota_upgrade_query_image_resp_message_t* message);
 
     void set_model_id(const std::string& modelIdStr);
