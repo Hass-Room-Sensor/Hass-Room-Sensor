@@ -445,6 +445,15 @@ void ZDevice::set_device_state(DeviceState newState) {
             break;
     }
 }
+
+void ZDevice::on_connected() {
+    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
+    zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 30, 0});
+
+    esp_zb_ieee_addr_t extended_pan_id;
+    esp_zb_get_extended_pan_id(extended_pan_id);
+    ESP_LOGI(zigbee::ZDevice::TAG, "Connected (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
+}
 } // namespace zigbee
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
@@ -469,11 +478,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
                     ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
                     esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
                 } else {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
-                    esp_zb_ieee_addr_t extended_pan_id;
-                    esp_zb_get_extended_pan_id(extended_pan_id);
-                    zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 30, 0});
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Rejoined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
+                    zigbee::ZDevice::get_instance()->on_connected();
                 }
             } else {
                 /* commissioning failed */
@@ -487,11 +492,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
 
         case ESP_ZB_BDB_SIGNAL_STEERING:
             if (err_status == ESP_OK) {
-                esp_zb_ieee_addr_t extended_pan_id;
-                esp_zb_get_extended_pan_id(extended_pan_id);
-                zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{0, 30, 0});
-                ESP_LOGI(zigbee::ZDevice::TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
+                zigbee::ZDevice::get_instance()->on_connected();
             } else {
                 zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
                 zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 20, 0});
@@ -511,7 +512,19 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             break;
 
         case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:
-            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device unavailable with error status: %s.", esp_err_to_name(err_status));
+            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+            zigbee::ZDevice::get_instance()->set_led_color(actuators::color_t{30, 0, 0});
+            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device unavailable (status: %s). Trying to rejoin...", esp_err_to_name(err_status));
+            esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
+            break;
+
+        case ESP_ZB_BDB_SIGNAL_TC_REJOIN_DONE:
+            if (err_status == ESP_OK) {
+                zigbee::ZDevice::get_instance()->on_connected();
+                ESP_LOGI(zigbee::ZDevice::TAG, "TC rejoin completed.");
+            } else {
+                ESP_LOGW(zigbee::ZDevice::TAG, "TC rejoin failed: %s", esp_err_to_name(err_status));
+            }
             break;
 
         case ESP_ZB_ZDO_SIGNAL_LEAVE: {

@@ -144,6 +144,7 @@ class ZDevice {
     void reset() const;
 
     void set_device_state(DeviceState newState);
+    void on_connected();
 
   private:
     static esp_err_t power_saver_init();
