@@ -13,6 +13,7 @@ jobs:
     strategy:
       matrix:
         esp32_target: [esp32h2, esp32c6]
+      fail-fast: false
 
     steps:
       - name: Checkout repository
@@ -34,7 +35,7 @@ jobs:
 
       - name: Create OTA
         run: |
-          mkdir ota
+          mkdir ota_${{ matrix.esp32_target }}
           cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.bin
           cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.ota
           cd ota_${{ matrix.esp32_target }}
