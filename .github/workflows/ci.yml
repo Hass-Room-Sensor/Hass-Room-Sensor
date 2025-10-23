@@ -10,6 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        esp32_target: [esp32h2, esp32c6]
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -19,7 +23,7 @@ jobs:
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.5.1
-          target: esp32h2
+          target: ${{ matrix.esp32_target }}
           path: esp32
           extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"'
   
@@ -31,13 +35,12 @@ jobs:
       - name: Create OTA
         run: |
           mkdir ota
-          cp esp32/build/hass_sensor.bin ota/hass_sensor.bin
-          cp esp32/build/hass_sensor.bin ota/hass_sensor.ota
+          cp esp32/build/hass_sensor.bin ota/hass_sensor_${{ matrix.esp32_target }}.bin
+          cp esp32/build/hass_sensor.bin ota/hass_sensor_${{ matrix.esp32_target }}.ota
           cd ota
-          python ../image_builder_tool.py --create hass_sensor.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor.ota
-          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor.ota > ota.json
-          cat ota.json
-          file_size=$(stat -c %s "hass_sensor.ota")
+          python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id 0x0 --image-type 0x0 --version 0x2 --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
+          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
+          file_size=$(stat -c %s "hass_sensor_${{ matrix.esp32_target }}.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
           cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > index.json
           cat index.json
