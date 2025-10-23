@@ -396,8 +396,8 @@ void ZDevice::setup_ota_cluster() {
     assert(!otaAttrList);
     assert(clusterList);
 
-    otaCfg.ota_upgrade_file_version = 1;
-    otaCfg.ota_upgrade_manufacturer = 1;
+    otaCfg.ota_upgrade_file_version = 2;
+    otaCfg.ota_upgrade_manufacturer = 0;
     otaCfg.ota_upgrade_image_type = 0;
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
