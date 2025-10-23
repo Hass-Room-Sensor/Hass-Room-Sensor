@@ -305,11 +305,12 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
 
                 ret = (writtenTotal == expectedWritten) ? ESP_OK : ESP_FAIL;
 
+                zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
+                ESP_LOGI(TAG, "OTA CHECK: %s (written=%lu, expected=%lu)", (ret == ESP_OK ? "OK" : "MISMATCH"), static_cast<unsigned long>(writtenTotal), static_cast<unsigned long>(expectedWritten));
+
                 // Reset counters for next session:
                 rxTotal = 0;
                 writtenTotal = 0;
-                zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
-                ESP_LOGI(TAG, "OTA CHECK: %s (written=%lu, expected=%lu)", (ret == ESP_OK ? "OK" : "MISMATCH"), static_cast<unsigned long>(writtenTotal), static_cast<unsigned long>(expectedWritten));
                 break;
             }
 
@@ -558,7 +559,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
         } break;
 
         case ESP_ZB_NLME_STATUS_INDICATION:
-            ESP_LOGI(zigbee::ZDevice::TAG, "%s NLME status '0x%x\n' with error status: %s", esp_zb_zdo_signal_to_string(sigType), *static_cast<uint8_t*>(esp_zb_app_signal_get_params(signal_struct->p_app_signal)), esp_err_to_name(err_status));
+            ESP_LOGI(zigbee::ZDevice::TAG, "%s NLME status '0x%x' with error status: %s", esp_zb_zdo_signal_to_string(sigType), *static_cast<uint8_t*>(esp_zb_app_signal_get_params(signal_struct->p_app_signal)), esp_err_to_name(err_status));
             break;
 
         default:
