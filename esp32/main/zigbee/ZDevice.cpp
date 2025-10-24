@@ -10,19 +10,17 @@
 #include "esp_zigbee_type.h"
 #include "freertos/task.h"
 #include "ha/esp_zigbee_ha_standard.h"
-#include "zb_config_platform.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
 #include "zcl/esp_zigbee_zcl_carbon_dioxide_measurement.h"
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zcl/esp_zigbee_zcl_humidity_meas.h"
 #include "zcl/esp_zigbee_zcl_ota.h"
+#include "zcl/esp_zigbee_zcl_power_config.h"
 #include "zcl/esp_zigbee_zcl_temperature_meas.h"
 #include "zdo/esp_zigbee_zdo_common.h"
 #ifdef CONFIG_PM_ENABLE
 #include "esp_pm.h"
-#include "esp_private/esp_clk.h"
-#include "esp_sleep.h"
 #endif
 #include <array>
 #include <cassert>
@@ -115,17 +113,17 @@ void ZDevice::set_version_details(const std::string& versionStr) {
 
 void ZDevice::update_temp(double temp) {
     curTemp = static_cast<int16_t>(temp * 100); // Temperature values are multiplied by 100 to avoid floating point numbers
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp), false);
+    esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, static_cast<void*>(&curTemp), false);
 }
 
 void ZDevice::update_hum(double hum) {
     curHum = static_cast<int16_t>(hum * 100); // Humidity values are multiplied by 100 to avoid floating point numbers
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
+    esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, static_cast<void*>(&curHum), false);
 }
 
 void ZDevice::update_co2(uint16_t co2) {
     curCo2 = static_cast<float_t>(static_cast<double>(co2) / 1000000.0); // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
-    esp_zb_zcl_set_attribute_val(ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
+    esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {
@@ -136,6 +134,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ZDevice::get_instance()->basicClusterConfig.power_source = 0b1 << 0x3; // Set as battery powered device
         ESP_LOGI(TAG, "ZigBee device categorized as battery powered.");
     } else {
+        ZDevice::get_instance()->basicClusterConfig.power_source = DEFAULT_POWER_SOURCE;
         ESP_LOGI(TAG, "ZigBee device categorized as DC powered.");
     }
 
@@ -165,13 +164,24 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     // CO2:
     ZDevice::get_instance()->setup_co2_cluster();
 
+    // Debug LED ON/OFF:
+    ZDevice::get_instance()->setup_debug_led_cluster();
+
+    // Battery:
+    ZDevice::get_instance()->setup_battery_cluster();
+
     // Basic information:
     std::array<char, 32> version{};
     snprintf(version.data(), version.size(), "%d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
     ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", std::string{version.data()});
 
+    // Generic endpoint
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
-    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, ENDPOINT_ID));
+    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, DEFAULT_ENDPOINT_ID));
+
+    // Light endpoint
+    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, ZDevice::get_instance()->debugLedClusterList, LIGHT_ON_OFF_ENDPOINT_ID));
+
     ESP_ERROR_CHECK(esp_zb_device_register(endpointList));
 
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
@@ -213,7 +223,22 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
 }
 
 esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg) {
-    ESP_LOGI(TAG, "Attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, attrTypeId: %d", msg->info.status, msg->info.dst_endpoint, msg->info.cluster, msg->attribute.id, msg->attribute.data.type);
+    // Debug LED:
+    if (msg->info.dst_endpoint == LIGHT_ON_OFF_ENDPOINT_ID.endpoint && msg->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF && msg->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && msg->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_BOOL) {
+        bool& curDebugLed = zigbee::ZDevice::get_instance()->curDebugLed;
+        curDebugLed = msg->attribute.data.value ? *(bool*) msg->attribute.data.value : curDebugLed;
+        if (curDebugLed) {
+            zigbee::ZDevice::get_instance()->rgbLed->enable();
+        } else {
+            zigbee::ZDevice::get_instance()->rgbLed->disable();
+        }
+        ESP_LOGD(TAG, "Debug LED changed to: %s", curDebugLed ? "on" : "off");
+    }
+
+    // Misc:
+    else {
+        ESP_LOGI(TAG, "Unhandled attribute changed. status: %d, endpoint: %d, clusterId: %d, attrId: %d, attrTypeId: %d", msg->info.status, msg->info.dst_endpoint, msg->info.cluster, msg->attribute.id, msg->attribute.data.type);
+    }
     return ESP_OK;
 }
 
@@ -449,6 +474,27 @@ void ZDevice::setup_co2_cluster() {
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(clusterList, co2AttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
+void ZDevice::setup_debug_led_cluster() {
+    // Ensure this is called only once
+    assert(!debugLedClusterList);
+
+    debugLedCfg.basic_cfg.power_source = DEFAULT_POWER_SOURCE;
+    debugLedCfg.basic_cfg.zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE;
+
+    debugLedClusterList = esp_zb_on_off_light_clusters_create(&debugLedCfg);
+    curDebugLed = rgbLed->is_enabled();
+}
+
+void ZDevice::setup_battery_cluster() {
+    // Ensure this is called only once
+    assert(!powerAttrList);
+    assert(clusterList);
+
+    powerAttrList = esp_zb_power_config_cluster_create(&powerCfg);
+    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &curBatteryPercentage));
+    ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(clusterList, powerAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+}
+
 void ZDevice::set_device_state(DeviceState newState) {
     if (deviceState == newState) {
         return;
@@ -482,6 +528,11 @@ void ZDevice::on_connected() {
     esp_zb_ieee_addr_t extended_pan_id;
     esp_zb_get_extended_pan_id(extended_pan_id);
     ESP_LOGI(zigbee::ZDevice::TAG, "Connected (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
+
+    // Report the current debug LED state
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(LIGHT_ON_OFF_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_ON_OFF, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, &ZDevice::get_instance()->curDebugLed, false));
+    // Report the current battery percentage
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &ZDevice::get_instance()->curBatteryPercentage, false));
 }
 } // namespace zigbee
 

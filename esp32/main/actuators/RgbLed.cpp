@@ -1,6 +1,7 @@
 #include "actuators/RgbLed.hpp"
 #include "driver/gpio.h"
 #include "hal/gpio_types.h"
+#include "nvs.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -25,6 +26,8 @@ void RgbLed::init() {
 
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
 
+    load_enabled();
+
     // Set all LED off to clear all pixels:
     led_strip_clear(led_strip);
 
@@ -33,19 +36,39 @@ void RgbLed::init() {
 }
 
 void RgbLed::on(color_t color) {
-    led_strip_set_pixel(led_strip, 0, static_cast<uint32_t>(color.r), static_cast<uint32_t>(color.g), static_cast<uint32_t>(color.b));
-    led_strip_refresh(led_strip);
+    currentColor = color;
+
+    if (enabled) {
+        led_strip_set_pixel(led_strip, 0, static_cast<uint32_t>(currentColor.r), static_cast<uint32_t>(currentColor.g), static_cast<uint32_t>(currentColor.b));
+        led_strip_refresh(led_strip);
+    }
 }
 
 void RgbLed::on(double hue) {
-    on(hueToRgb(hue));
+    on(hue_tu_rgb(hue));
 }
 
 void RgbLed::off() {
     led_strip_clear(led_strip);
 }
 
-color_t RgbLed::hueToRgb(double hue) {
+void RgbLed::enable() {
+    enabled = true;
+    save_enabled();
+    on(currentColor);
+}
+
+void RgbLed::disable() {
+    enabled = false;
+    save_enabled();
+    off();
+}
+
+bool RgbLed::is_enabled() const {
+    return enabled;
+}
+
+color_t RgbLed::hue_tu_rgb(double hue) {
     double r = std::abs(hue * 6.0 - 3.0) - 1.0;
     double g = 2.0 - std::abs(hue * 6.0 - 2.0);
     double b = 2.0 - std::abs(hue * 6.0 - 4.0);
@@ -54,6 +77,31 @@ color_t RgbLed::hueToRgb(double hue) {
     g = std::max(0.0, std::min(1.0, g));
     b = std::max(0.0, std::min(1.0, b));
 
-    return {static_cast<uint8_t>(r * 255), static_cast<uint8_t>(g * 255), static_cast<uint8_t>(b * 255)};
+    return {.r = static_cast<uint8_t>(r * 255), .g = static_cast<uint8_t>(g * 255), .b = static_cast<uint8_t>(b * 255)};
 }
+
+void RgbLed::load_enabled() {
+    nvs_handle_t handle{};
+    ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE.data(), NVS_READONLY, &handle));
+
+    uint8_t stored = 0;
+    esp_err_t err = nvs_get_u8(handle, NVS_ENABLED_KEY.data(), &stored);
+    nvs_close(handle);
+
+    if (err == ESP_OK) {
+        enabled = stored != 0;
+    } else {
+        enabled = true;
+    }
+}
+
+void RgbLed::save_enabled() const {
+    nvs_handle_t handle{};
+    ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE.data(), NVS_READWRITE, &handle));
+
+    uint8_t stored = enabled ? 1 : 0;
+    ESP_ERROR_CHECK(nvs_set_u8(handle, NVS_ENABLED_KEY.data(), stored));
+    nvs_close(handle);
+}
+
 } // namespace actuators

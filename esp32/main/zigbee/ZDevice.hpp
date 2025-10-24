@@ -46,7 +46,8 @@ class ZDevice {
     static const char* TAG;
 
   private:
-    static constexpr esp_zb_endpoint_config_t ENDPOINT_ID{10, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID, 12};
+    static constexpr esp_zb_endpoint_config_t DEFAULT_ENDPOINT_ID{10, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_SIMPLE_SENSOR_DEVICE_ID, 4};
+    static constexpr esp_zb_endpoint_config_t LIGHT_ON_OFF_ENDPOINT_ID{11, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID, 4};
 
     /**
      * The ZigBee spec defines the power source (8 bits) in "3.2.2.2.8 PowerSource Attribute".
@@ -100,6 +101,16 @@ class ZDevice {
     esp_zb_attribute_list_s* co2AttrList{nullptr};
     float_t curCo2{-1};
 
+    // Debug LED information:
+    esp_zb_on_off_light_cfg_t debugLedCfg;
+    esp_zb_cluster_list_t* debugLedClusterList{nullptr};
+    bool curDebugLed{true};
+
+    // Battery
+    esp_zb_power_config_cluster_cfg_t powerCfg{};
+    esp_zb_attribute_list_s* powerAttrList{nullptr};
+    uint8_t curBatteryPercentage{100}; // Default: 50% (0–200 in 0.5% steps), Unknown: 0xFF
+
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
 
     // Reset GPIO used for factory resetting the ZigBee stack.
@@ -137,6 +148,8 @@ class ZDevice {
     void setup_ota_cluster();
     void setup_hum_cluster();
     void setup_co2_cluster();
+    void setup_debug_led_cluster();
+    void setup_battery_cluster();
 
     void update_temp(double temp);
     void update_hum(double hum);
