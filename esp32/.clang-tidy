@@ -39,5 +39,5 @@ Checks: '*,
 -llvmlibc-inline-function-decl
 '
 WarningsAsErrors: '*'
-HeaderFilterRegex: 'src/*.hpp'
+HeaderFilterRegex: '.*main\/.*\.hpp'
 FormatStyle: file

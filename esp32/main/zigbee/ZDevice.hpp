@@ -154,8 +154,8 @@ class ZDevice {
     void update_temp(double temp);
     void update_hum(double hum);
     void update_co2(uint16_t co2);
+
     void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
-    void set_led_color(const actuators::color_t& color);
 
     void reset() const;
 
@@ -176,5 +176,7 @@ class ZDevice {
     void set_manufacturer(const std::string& manufacturerStr);
     void set_version_details(const std::string& versionStr);
     void set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId);
+
+    void set_led_color(const actuators::color_t& color);
 };
 } // namespace zigbee

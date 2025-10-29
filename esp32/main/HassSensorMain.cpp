@@ -1,4 +1,7 @@
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
 #include "actuators/RgbLed.hpp"
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
+
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "hal/gpio_types.h"
@@ -18,7 +21,13 @@
 namespace {
 const char* TAG = "hassSensor";
 
+// Enable or disable the SCD41 mock sensor implementation
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
+constexpr bool USE_MOCK_SCD41 = true;
+#else
 constexpr bool USE_MOCK_SCD41 = false;
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
+
 } // namespace
 
 void mainLoop() {
@@ -34,11 +43,14 @@ void mainLoop() {
     }
     ESP_ERROR_CHECK(err);
 
+
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
     // Initialize the LED:
     std::shared_ptr<actuators::RgbLed> rgbLed = std::make_shared<actuators::RgbLed>(GPIO_NUM_8);
     rgbLed->init();
     rgbLed->on(actuators::color_t{0, 0, 30});
     zigbee::ZDevice::get_instance()->set_led(rgbLed);
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
 
     // Initialize the SCD41 sensor:
     std::unique_ptr<sensors::AbstractScd41> scd41{nullptr};
@@ -49,7 +61,9 @@ void mainLoop() {
     }
 
     if (!scd41->init()) {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
         rgbLed->on(actuators::color_t{30, 0, 0});
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
