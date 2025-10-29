@@ -23,8 +23,12 @@ menu "HASS Environment Sensor"
     
     config HASS_ENVIRONMENT_SENSOR_DEBUG_RGB_LED
         bool "Enable the debug RGB LED found on official ESP32 dev kits"
-        default y
+        default n
     
+    config HASS_ENVIRONMENT_SENSOR_LED
+        bool "Enable the LED found on the seed studio XIAO ESP32C6"
+        default y
+
     config HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
         bool "Enable the mock SCD41 sensor instead of the real one. Useful in case you do not have a real one connected to the device"
         default n

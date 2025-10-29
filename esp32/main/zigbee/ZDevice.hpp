@@ -1,5 +1,6 @@
 #pragma once
 
+#include "actuators/Led.hpp"
 #include "actuators/RgbLed.hpp"
 #include "sensors/GpioInput.hpp"
 
@@ -12,7 +13,7 @@ extern "C" {
 #include "esp_zigbee_ota.h"
 #include "esp_zigbee_type.h"
 #include "ha/esp_zigbee_ha_standard.h"
-#include "hal/gpio_types.h"
+#include "soc/gpio_num.h"
 #include "zcl/esp_zigbee_zcl_basic.h"
 }
 
@@ -112,6 +113,7 @@ class ZDevice {
     uint8_t curBatteryPercentage{100}; // Default: 50% (0–200 in 0.5% steps), Unknown: 0xFF
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
+    std::shared_ptr<actuators::Led> led{nullptr};
 
     // Reset GPIO used for factory resetting the ZigBee stack.
     sensors::GpioInput resetGpio{GPIO_NUM_1};
@@ -156,6 +158,7 @@ class ZDevice {
     void update_co2(uint16_t co2);
 
     void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
+    void set_led(std::shared_ptr<actuators::Led> Led);
 
     void reset() const;
 

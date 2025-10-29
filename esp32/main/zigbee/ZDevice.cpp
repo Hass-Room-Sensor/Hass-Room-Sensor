@@ -15,6 +15,7 @@
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zcl/esp_zigbee_zcl_humidity_meas.h"
+#include "zcl/esp_zigbee_zcl_identify.h"
 #include "zcl/esp_zigbee_zcl_ota.h"
 #include "zcl/esp_zigbee_zcl_power_config.h"
 #include "zcl/esp_zigbee_zcl_temperature_meas.h"
@@ -27,6 +28,7 @@
 #include <chrono>
 #include <cmath>
 #include <esp_check.h>
+#include <optional>
 #include <vector>
 
 namespace zigbee {
@@ -34,6 +36,10 @@ const char* ZDevice::TAG = "ZDevice";
 
 void ZDevice::set_led(std::shared_ptr<actuators::RgbLed> rgbLed) {
     this->rgbLed = std::move(rgbLed);
+}
+
+void ZDevice::set_led(std::shared_ptr<actuators::Led> led) {
+    this->led = std::move(led);
 }
 
 void ZDevice::set_led_color(const actuators::color_t& color) {
@@ -184,7 +190,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, DEFAULT_ENDPOINT_ID));
 
     // Light endpoint
-    ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, ZDevice::get_instance()->debugLedClusterList, LIGHT_ON_OFF_ENDPOINT_ID));
+    if (ZDevice::get_instance()->debugLedClusterList) {
+        ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, ZDevice::get_instance()->debugLedClusterList, LIGHT_ON_OFF_ENDPOINT_ID));
+    }
 
     ESP_ERROR_CHECK(esp_zb_device_register(endpointList));
 
@@ -227,6 +235,24 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callback_id, co
 }
 
 esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* msg) {
+    // Identify cluster
+    if (msg->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_IDENTIFY && msg->attribute.id == ESP_ZB_ZCL_ATTR_IDENTIFY_IDENTIFY_TIME_ID && msg->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_U16) {
+        uint16_t identifyTime = 0;
+        if (msg->attribute.data.value) {
+            identifyTime = *static_cast<uint16_t*>(msg->attribute.data.value);
+        }
+
+        if (zigbee::ZDevice::get_instance()->led) {
+            if (identifyTime > 0) {
+                zigbee::ZDevice::get_instance()->led->set_blink(std::chrono::milliseconds(500), std::make_optional<size_t>(identifyTime * 2));
+            } else {
+                zigbee::ZDevice::get_instance()->led->set_off();
+            }
+        }
+        ESP_LOGD(TAG, "identifyTime=%u -> %s blinking", static_cast<unsigned>(identifyTime), (identifyTime > 0 ? "start" : "stop"));
+        return ESP_OK;
+    }
+
     // Debug LED:
     if (msg->info.dst_endpoint == LIGHT_ON_OFF_ENDPOINT_ID.endpoint && msg->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF && msg->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && msg->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_BOOL) {
         bool& curDebugLed = zigbee::ZDevice::get_instance()->curDebugLed;
@@ -544,7 +570,9 @@ void ZDevice::on_connected() {
     ESP_LOGI(zigbee::ZDevice::TAG, "Connected (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
 
     // Report the current debug LED state
-    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(LIGHT_ON_OFF_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_ON_OFF, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, &ZDevice::get_instance()->curDebugLed, false));
+    if (rgbLed) {
+        ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(LIGHT_ON_OFF_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_ON_OFF, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, &ZDevice::get_instance()->curDebugLed, false));
+    }
     // Report the current battery percentage
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &ZDevice::get_instance()->curBatteryPercentage, false));
 }
