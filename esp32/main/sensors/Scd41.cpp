@@ -273,7 +273,8 @@ bool Scd41::reinit() const {
 bool Scd41::perform_self_test() const {
     ESP_LOGD(TAG, "Starting self test...");
     std::array<uint16_t, 1> response{};
-    if (!write_read(0x3639, response, std::chrono::milliseconds(10000))) {
+    // In theory 10s should be enough but some sensors need slightly more so add an other 5s.
+    if (!write_read(0x3639, response, std::chrono::milliseconds(10000 + 5000))) {
         ESP_LOGE(TAG, "Failed to perform self test.");
         return false;
     }
