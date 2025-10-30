@@ -199,9 +199,10 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
 
     // Advertise on all 2.4 GHz channels:
-    ESP_ERROR_CHECK(esp_zb_set_channel_mask(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
-    ESP_ERROR_CHECK(esp_zb_set_primary_network_channel_set(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
-    ESP_ERROR_CHECK(esp_zb_set_secondary_network_channel_set(ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK));
+    constexpr uint32_t EU_CHANNEL_MASK = 0x07FFF800; // bits 11–26 set since those are the channels used by ZigBee in the EU
+    ESP_ERROR_CHECK(esp_zb_set_channel_mask(EU_CHANNEL_MASK));
+    ESP_ERROR_CHECK(esp_zb_set_primary_network_channel_set(EU_CHANNEL_MASK));
+    ESP_ERROR_CHECK(esp_zb_set_secondary_network_channel_set(EU_CHANNEL_MASK));
 
     // Start:
     ESP_ERROR_CHECK(esp_zb_start(false));

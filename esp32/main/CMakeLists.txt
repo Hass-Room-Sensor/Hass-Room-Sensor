@@ -4,6 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 idf_component_register(SRCS "HassSensorMain.cpp"
+                            "DeviceDefs.hpp"
                             "sensors/Scd41.hpp"
                             "sensors/Scd41.cpp"
                             "sensors/Scd41Mock.hpp"
