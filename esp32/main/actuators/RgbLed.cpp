@@ -82,10 +82,15 @@ color_t RgbLed::hue_tu_rgb(double hue) {
 
 void RgbLed::load_enabled() {
     nvs_handle_t handle{};
-    ESP_ERROR_CHECK(nvs_open(NVS_NAMESPACE.data(), NVS_READONLY, &handle));
+    esp_err_t err = nvs_open(NVS_NAMESPACE.data(), NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) { // Not yet saved. Fallback to default value.
+        enabled = true;
+    } else {
+        ESP_ERROR_CHECK(err);
+    }
 
     uint8_t stored = 0;
-    esp_err_t err = nvs_get_u8(handle, NVS_ENABLED_KEY.data(), &stored);
+    err = nvs_get_u8(handle, NVS_ENABLED_KEY.data(), &stored);
     nvs_close(handle);
 
     if (err == ESP_OK) {
