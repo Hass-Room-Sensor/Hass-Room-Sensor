@@ -222,14 +222,14 @@ jobs:
           # Remove all existing entries inside BASE where the `file_version` matches one inside ADD.
           # Then add all entries from ADD to BASE and save as OUT.
           jq -s '
+            # .[0] = base, .[1] = add
             (.[1].firmwares | map(.file_version) | unique) as $new_vers
             | {
                 firmwares:
                   (
-                    .[0].firmwares
-                    | map(select((.file_version as $v | any($new_vers[]; . == $v) | not)))
+                    (.[0].firmwares | map(select(.file_version as $v | ($new_vers | index($v) | not))))
+                    + .[1].firmwares
                   )
-                  + .[1].firmwares
               }
           ' "$BASE" "$ADD" > "${OUT}.tmp"
       
