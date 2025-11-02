@@ -1,0 +1,7 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "Connector_Wuerth")(type "KiCad")(uri "${KIPRJMOD}/Lib/Symbols/Connector_Wurth_WR-PHD.kicad_sym")(options "")(descr ""))
+  (lib (name "Sensirion_SCD40")(type "KiCad")(uri "${KIPRJMOD}/Lib/Symbols/SCD40-D-R2.kicad_sym")(options "")(descr ""))
+  (lib (name "Bosch_BMP690")(type "KiCad")(uri "${KIPRJMOD}/Lib/Symbols/BME690.kicad_sym")(options "")(descr ""))
+  (lib (name "XIAO-ESP32C6")(type "KiCad")(uri "${KIPRJMOD}/Lib/Symbols/XIAO-ESP32C6.kicad_sym")(options "")(descr ""))
+)
