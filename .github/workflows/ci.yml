@@ -68,7 +68,7 @@ jobs:
           cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.ota
           cd ota_${{ matrix.esp32_target }}
           python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id ${manuf_id} --image-type ${image_type} --version ${version_hex} --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
-          zigpy ota generate-index --ota-url-root="https://hass.uwpx.org/local/ota" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
+          zigpy ota generate-index --ota-url-root="" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
           file_size=$(stat -c %s "hass_sensor_${{ matrix.esp32_target }}.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
           cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > index.json
@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ota_data_${{ matrix.esp32_target }}
-          path: ./ota_${{ matrix.esp32_target }}
+          path: ota_${{ matrix.esp32_target }}
 
   merge:
     runs-on: ubuntu-latest
@@ -191,6 +191,63 @@ jobs:
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+      
+      - name: Install jq (if needed)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y jq
+          fi
+
+      - name: Update index.json with release URL
+        run: |
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.tag.outputs.tag }}/
+          jq --arg base "$BASE_URL" '.firmwares |= map(.binary_url = $base + .binary_url)' merged_ota/index.json > tmp && mv tmp merged_ota/index.json
+
+      - name: Merge OTA index into repo and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="esp32/ota/index.json"
+          ADD="merged_ota/index.json"
+          OUT="esp32/ota/index.json"
+      
+          if [[ ! -f "$BASE" ]]; then
+            echo "Base index not found at $BASE"; exit 1
+          fi
+          if [[ ! -f "$ADD" ]]; then
+            echo "Add index not found at $ADD"; exit 1
+          fi
+      
+          # Remove all existing entries inside BASE where the `file_version` matches one inside ADD.
+          # Then add all entries from ADD to BASE and save as OUT.
+          jq -s '
+            (.[1].firmwares | map(.file_version) | unique) as $new_vers
+            | {
+                firmwares:
+                  (
+                    .[0].firmwares
+                    | map(select((.file_version as $v | any($new_vers[]; . == $v) | not)))
+                  )
+                  + .[1].firmwares
+              }
+          ' "$BASE" "$ADD" > "${OUT}.tmp"
+      
+          mv "${OUT}.tmp" "$OUT"
+          
+          rm -f $ADD
+          cp $OUT $ADD
+
+      - uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: Added latest release artifacts to 'esp32/ota/index.json'
+          file_pattern: esp32/ota/index.json
+
+      - name: Upload merged OTA bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release_ota
+          path: merged_ota
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
