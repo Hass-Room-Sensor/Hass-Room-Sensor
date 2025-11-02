@@ -2,9 +2,9 @@ name: ESP32 OTA Builder
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        esp32_target: [esp32h2, esp32c6]
+        device_target: [seedStudioXiao, esp32H2DevKit, esp32C6DevKit]
       fail-fast: false
 
     steps:
@@ -22,15 +22,56 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
 
+      - name: Set target
+        id: set_target
+        shell: bash
+        run: |
+          # Ensure defaults are applied fresh (avoid reusing a previous sdkconfig)
+          rm -f sdkconfig sdkconfig.old sdkconfig.device
+
+          # Map each target to the specific config
+          case "${{ matrix.device_target }}" in
+            seedStudioXiao)
+              echo "espIdf_target=esp32c6" >> "$GITHUB_OUTPUT"
+              echo "device_target=CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6" >> "$GITHUB_OUTPUT"
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n" >> sdkconfig.device
+              ;;
+            esp32H2DevKit)
+              echo "espIdf_target=esp32h2" >> "$GITHUB_OUTPUT"
+              echo "device_target=CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT" >> "$GITHUB_OUTPUT"
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=y" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n" >> sdkconfig.device
+              ;;
+            esp32C6DevKit)
+              echo "espIdf_target=esp32c6" >> "$GITHUB_OUTPUT"
+              echo "device_target=CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT" >> "$GITHUB_OUTPUT"
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n" >> sdkconfig.device
+              echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=y" >> sdkconfig.device
+              ;;
+            *) echo "Unknown target: ${{ matrix.device_target }}" >&2; exit 1 ;;
+          esac
+
       # Build the application
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.5.1
-          target: ${{ matrix.esp32_target }}
+          target: ${{ steps.set_target.outputs.espIdf_target }}
           path: esp32
-          extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"'
+          command: idf.py build
+          extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release;sdkconfig.device"'
   
+      - name: Install gcc (if needed)
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y gcc
+          fi
+
       - name: Install OTA Dependencies
         run: |
           pip install zigpy-cli zigpy
@@ -38,8 +79,6 @@ jobs:
 
       - name: Create OTA
         run: |
-          set -euo pipefail
-
           # Where to parse the version and details from
           SDKCFG="esp32/sdkconfig.defaults"
 
@@ -57,22 +96,20 @@ jobs:
           version_dec=$(( (ver_major << 24) | (ver_minor << 12) | ver_patch ))
           version_hex=$(printf '0x%X' "$version_dec")
 
-          # Map each esp32_target to a unique image-type
-          case "${{ matrix.esp32_target }}" in
-            esp32h2) image_type=0x1 ;;
-            esp32c6) image_type=0x2 ;;
-            *) echo "Unknown target: ${{ matrix.esp32_target }}" >&2; exit 1 ;;
-          esac
+          # Parse the OTA image type. But before that run the preprocessor to figure out which version is valid.
+          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.device_target }} esp32/main/defs/DeviceDefs.hpp -o esp32/main/defs/DeviceDefs.hpp.preprocessor
+          image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' esp32/main/defs/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
+          rm -f esp32/main/defs/DeviceDefs.hpp.preprocessor
 
           echo "Using manuf-id=${manuf_id}, image-type=${image_type}, version=${version_hex} (dec=${version_dec})"
 
-          mkdir ota_${{ matrix.esp32_target }}
-          cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.bin
-          cp esp32/build/hass_sensor.bin ota_${{ matrix.esp32_target }}/hass_sensor_${{ matrix.esp32_target }}.ota
-          cd ota_${{ matrix.esp32_target }}
-          python ../image_builder_tool.py --create hass_sensor_${{ matrix.esp32_target }}.ota --manuf-id ${manuf_id} --image-type ${image_type} --version ${version_hex} --tag-file hass_sensor_${{ matrix.esp32_target }}.ota
-          zigpy ota generate-index --ota-url-root="" hass_sensor_${{ matrix.esp32_target }}.ota > ota.json
-          file_size=$(stat -c %s "hass_sensor_${{ matrix.esp32_target }}.ota")
+          mkdir ota_${{ matrix.device_target }}
+          cp esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.bin
+          cp esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.ota
+          cd ota_${{ matrix.device_target }}
+          python ../image_builder_tool.py --create hass_sensor_${{ matrix.device_target }}.ota --manuf-id ${manuf_id} --image-type ${image_type} --version ${version_hex} --tag-file hass_sensor_${{ matrix.device_target }}.ota
+          zigpy ota generate-index --ota-url-root="" hass_sensor_${{ matrix.device_target }}.ota > ota.json
+          file_size=$(stat -c %s "hass_sensor_${{ matrix.device_target }}.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
           cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > index.json
           cat index.json
@@ -80,8 +117,8 @@ jobs:
       - name: "Upload OTA artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: ota_data_${{ matrix.esp32_target }}
-          path: ota_${{ matrix.esp32_target }}
+          name: ota_data_${{ matrix.device_target }}
+          path: ota_${{ matrix.device_target }}
 
   merge:
     runs-on: ubuntu-latest
@@ -138,7 +175,7 @@ jobs:
     needs: merge
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # required to create releases/tags
+      contents: write # required to create releases/tags
     environment:
       name: release
     steps:

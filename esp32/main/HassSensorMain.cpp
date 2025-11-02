@@ -1,4 +1,4 @@
-#include "DeviceDefs.hpp"
+#include "defs/DeviceDefs.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
@@ -14,9 +14,9 @@
 #include <optional>
 #include <thread>
 
-#ifdef HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 #include "driver/gpio.h"
-#endif // HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
 #ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
 #include "actuators/RgbLed.hpp"
@@ -34,7 +34,7 @@
 namespace {
 const char* TAG = "hassSensor";
 
-#ifdef HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 /**
  * seed studio XIAO ESPC6 device specific init.
  **/
@@ -49,9 +49,9 @@ void seed_studio_xiao_espc6_init() {
     gpio_set_direction(gpio_num_t::GPIO_NUM_14, GPIO_MODE_OUTPUT);
     gpio_set_level(gpio_num_t::GPIO_NUM_14, HASS_SENSOR_ANTENNA_EXTERNAL ? 1 : 0);
 
-    ESP_LOGI(TAG, "XIAO ESPC6 antenna: %s", HASS_SENSOR_ANTENNA_EXTERNAL ? "external" : "internal");
+    ESP_LOGI(TAG, "XIAO ESPC6 antenna: %s", ::HASS_SENSOR_ANTENNA_EXTERNAL ? "external" : "internal");
 }
-#endif // HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
 } // namespace
 
@@ -60,9 +60,9 @@ void mainLoop() {
 
     ESP_LOGI(TAG, "Starting HASS environment sensor version %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
 
-#ifdef HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
     seed_studio_xiao_espc6_init();
-#endif // HASS_SENSOR_DEVICE_SEED_STUDIO_XIAO_ESPC6
+#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
     // Initialize the flash:
     esp_err_t err = nvs_flash_init();
