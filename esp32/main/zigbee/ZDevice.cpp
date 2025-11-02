@@ -1,4 +1,5 @@
 #include "zigbee/ZDevice.hpp"
+#include "defs/DeviceDefs.hpp"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -458,14 +459,7 @@ void ZDevice::setup_ota_cluster() {
 
     otaCfg.ota_upgrade_file_version = (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR << 24) | (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR << 12) | (CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
     otaCfg.ota_upgrade_manufacturer = CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER;
-
-#ifdef CONFIG_IDF_TARGET_ESP32H2
-    otaCfg.ota_upgrade_image_type = 1;
-#elif CONFIG_IDF_TARGET_ESP32C6
-    otaCfg.ota_upgrade_image_type = 2;
-#else
-    otaCfg.ota_upgrade_image_type = 0;
-#endif
+    otaCfg.ota_upgrade_image_type = OTA_IMAGE_TYPE;
 
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
 
