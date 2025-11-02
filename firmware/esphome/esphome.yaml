@@ -1,0 +1,3 @@
+esphome:
+  name: $device_name
+  comment: "$friendly_name ($location_name) [$hardware_name]"
