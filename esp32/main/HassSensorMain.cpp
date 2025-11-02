@@ -1,4 +1,4 @@
-#include "DeviceDefs.hpp"
+#include "defs/DeviceDefs.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"

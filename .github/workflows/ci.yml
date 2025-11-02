@@ -94,9 +94,9 @@ jobs:
           version_hex=$(printf '0x%X' "$version_dec")
 
           # Parse the OTA image type. But before that run the preprocessor to figure out which version is valid.
-          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.espIdf_target }} main/DeviceDefs.hpp -o main/DeviceDefs.hpp.preprocessor
-          image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' main/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
-          rm -f main/DeviceDefs.hpp.preprocessor
+          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.espIdf_target }} main/DeviceDefs.hpp -o main/defs/DeviceDefs.hpp.preprocessor
+          image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' main/defs/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
+          rm -f main/defs/DeviceDefs.hpp.preprocessor
 
           echo "Using manuf-id=${manuf_id}, image-type=${image_type}, version=${version_hex} (dec=${version_dec})"
 
