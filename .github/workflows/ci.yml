@@ -96,7 +96,7 @@ jobs:
           version_hex=$(printf '0x%X' "$version_dec")
 
           # Parse the OTA image type. But before that run the preprocessor to figure out which version is valid.
-          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.espIdf_target }} main/DeviceDefs.hpp -o esp32/main/defs/DeviceDefs.hpp.preprocessor
+          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.espIdf_target }} esp32/main/DeviceDefs.hpp -o esp32/main/defs/DeviceDefs.hpp.preprocessor
           image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' esp32/main/defs/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
           rm -f esp32/main/defs/DeviceDefs.hpp.preprocessor
 
