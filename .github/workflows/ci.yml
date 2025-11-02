@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        device_target: [seedStudioXiao, esp32H6DevKit, esp32C6DevKit]
+        device_target: [seedStudioXiao, esp32H2DevKit, esp32C6DevKit]
       fail-fast: false
 
     steps:
