@@ -42,11 +42,13 @@ jobs:
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n" >> sdkconfig.device
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=y" >> sdkconfig.device
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n" >> sdkconfig.device
+              ;;
             esp32C6DevKit)
               echo "espIdf_target=esp32c6" >> "$GITHUB_OUTPUT"
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n" >> sdkconfig.device
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n" >> sdkconfig.device
               echo "CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=y" >> sdkconfig.device
+              ;;
             *) echo "Unknown target: ${{ matrix.device_target }}" >&2; exit 1 ;;
           esac
 
