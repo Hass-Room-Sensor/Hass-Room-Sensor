@@ -1,3 +1,22 @@
 {
-    "firmwares": []
+  "firmwares": [
+    {
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-feature-release-ci-7/hass_sensor_esp32c6.ota",
+      "file_version": 16785408,
+      "image_type": 2,
+      "manufacturer_id": 0,
+      "changelog": "",
+      "checksum": "sha3-256:83598dbe6f5543d6b60a87e2d1f19d4240e511b8cdb60569741e086378483be8",
+      "file_size": 632142
+    },
+    {
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-feature-release-ci-7/hass_sensor_esp32h2.ota",
+      "file_version": 16785408,
+      "image_type": 1,
+      "manufacturer_id": 0,
+      "changelog": "",
+      "checksum": "sha3-256:9d3da005029fffbe3e9eee257df3a273536189edbdd672ae16c49565b0a99265",
+      "file_size": 651758
+    }
+  ]
 }
