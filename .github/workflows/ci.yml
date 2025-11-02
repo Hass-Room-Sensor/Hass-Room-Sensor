@@ -201,7 +201,7 @@ jobs:
 
       - name: Update index.json with release URL
         run: |
-          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.tag.outputs.tag }}/"
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.tag.outputs.tag }}"
           jq --arg base "$BASE_URL" '.firmwares |= map(.binary_url = $base + .binary_url)' merged_ota/index.json > tmp && mv tmp merged_ota/index.json
 
       - name: Merge OTA index into repo and commit
