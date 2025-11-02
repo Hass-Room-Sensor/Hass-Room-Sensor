@@ -37,8 +37,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Where the sdkconfig lives (adjust if different)
-          SDKCFG="esp32/sdkconfig"
+          # Where to parse the version and details from
+          SDKCFG="esp32/sdkconfig.defaults"
 
           # Parse manufacturer + semver parts from sdkconfig
           manuf_id_raw=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER=' "$SDKCFG" | cut -d= -f2)
@@ -126,5 +126,79 @@ jobs:
       - name: Upload merged OTA bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ota-merged
+          name: merged_ota
           path: dist
+  
+  release:
+    needs: merge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create releases/tags
+    environment:
+      name: release
+    steps:
+      - name: Checkout (full history for merge-base)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download all OTA artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: merged_ota
+          merge-multiple: false
+          path: merged_ota
+
+      - name: Compute tag from sdkconfig.defaults and branch distance
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKCFG_DEF="esp32/sdkconfig.defaults"
+
+          ver_major=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR=' "$SDKCFG_DEF" | cut -d= -f2)
+          ver_minor=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR=' "$SDKCFG_DEF" | cut -d= -f2)
+          ver_patch=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH=' "$SDKCFG_DEF" | cut -d= -f2)
+          if [[ -z "${ver_major}" || -z "${ver_minor}" || -z "${ver_patch}" ]]; then
+            echo "Failed to read version from $SDKCFG_DEF"
+            exit 1
+          fi
+          semver="${ver_major}.${ver_minor}.${ver_patch}"
+
+          branch="${GITHUB_REF_NAME}"
+          safe_branch="${branch//\//-}"
+
+          git fetch --prune --tags origin
+
+          if [[ "$branch" == "main" ]]; then
+            tag="${semver}"
+          else
+            # number of commits since branch point with main
+            base="$(git merge-base "origin/main" HEAD)"
+            if [[ -z "$base" ]]; then
+              echo "Could not determine merge-base with origin/main"
+              exit 1
+            fi
+            count="$(git rev-list --count "${base}..HEAD")"
+            tag="dev-${safe_branch}-${count}-${semver}"
+          fi
+
+          # Fail if tag already exists
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Tag '${tag}' already exists."
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            merged_ota/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
