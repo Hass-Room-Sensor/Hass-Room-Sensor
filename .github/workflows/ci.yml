@@ -175,6 +175,7 @@ jobs:
 
           if [[ "$branch" == "main" ]]; then
             tag="${semver}"
+            prerelease=false
           else
             # number of commits since branch point with main
             base="$(git merge-base "origin/main" HEAD)"
@@ -184,6 +185,7 @@ jobs:
             fi
             count="$(git rev-list --count "${base}..HEAD")"
             tag="${semver}-dev-${safe_branch}-${count}"
+            prerelease=true
           fi
 
           # Fail if tag already exists
@@ -194,6 +196,7 @@ jobs:
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
       
       - name: Install jq (if needed)
         run: |
@@ -258,6 +261,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
+          prerelease: ${{ steps.tag.outputs.prerelease }}
           files: |
             merged_ota/*
         env:
