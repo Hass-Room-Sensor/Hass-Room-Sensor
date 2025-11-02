@@ -240,7 +240,7 @@ jobs:
 
       - uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: Added latest release artifacts to 'esp32/ota/index.json'
+          commit_message: "[skip ci] Added latest release artifacts to 'esp32/ota/index.json'"
           file_pattern: esp32/ota/index.json
 
       - name: Upload merged OTA bundle
