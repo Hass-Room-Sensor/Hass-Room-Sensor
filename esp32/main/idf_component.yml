@@ -1,11 +1,11 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif/esp-zboss-lib: "~1.6.4"
-  espressif/esp-zigbee-lib: "~1.6.7"
-  espressif/led_strip: "~3.0.1"
+  espressif/esp-zboss-lib: ~1.6.4
+  espressif/esp-zigbee-lib: ~1.6.7
+  espressif/led_strip: ~3.0.1
   ## Required IDF version
   idf:
-    version: ">=5.0.0"
+    version: '>=5.0.0'
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"
@@ -17,3 +17,4 @@ dependencies:
   #   # `public` flag doesn't have an effect dependencies of the `main` component.
   #   # All dependencies of `main` are public by default.
   #   public: true
+  espp/adc: ^1.0.29

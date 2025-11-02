@@ -3,6 +3,8 @@
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "sensors/AbstractScd41.hpp"
+#include "sensors/Battery.hpp"
+#include "sensors/IBattery.hpp"
 #include "soc/gpio_num.h"
 #include "zigbee/ZDevice.hpp"
 #include <array>
@@ -106,6 +108,16 @@ void mainLoop() {
         esp_restart();
     }
 
+    // Initialize battery ADC
+    sensors::Battery battery;
+    if (!battery.init()) {
+#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        rgbLed->on(actuators::color_t{30, 0, 0});
+#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        ESP_LOGE(TAG, "Initializing Battery failed. Rebooting...");
+        esp_restart();
+    }
+
     // Setup ZigBee device with initial measurements:
     std::optional<sensors::measurement_t> measurement = std::nullopt;
     do {
@@ -130,6 +142,17 @@ void mainLoop() {
         ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
         ESP_LOGI(TAG, "Marked current partition as OK and active to avoid rolling back to the old version.");
     }
+
+    while (true) {
+        const std::optional<int> batteryMeasurement = battery.read_measurement();
+        if (batteryMeasurement) {
+            ESP_LOGI(TAG, "[Measurement]: %d mV", *batteryMeasurement);
+        } else {
+            ESP_LOGW(TAG, "Failed to read battery measurement.");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
 
     // Main loop:
     while (true) {
