@@ -76,8 +76,6 @@ jobs:
 
       - name: Create OTA
         run: |
-          set -euo pipefail
-
           # Where to parse the version and details from
           SDKCFG="esp32/sdkconfig.defaults"
 
