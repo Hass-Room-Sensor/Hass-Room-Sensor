@@ -7,7 +7,7 @@
 			"command": "bash",
 			"args": [
 				"-lc",
-				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;"
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32c6;"
 			],
 			"problemMatcher": []
 		},
@@ -17,7 +17,7 @@
 			"command": "bash",
 			"args": [
 				"-lc",
-				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;"
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32h2;"
 			],
 			"problemMatcher": []
 		},
@@ -27,7 +27,7 @@
 			"command": "bash",
 			"args": [
 				"-lc",
-				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=y\" >> sdkconfig.device;"
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=y\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32c6;"
 			],
 			"problemMatcher": []
 		},
