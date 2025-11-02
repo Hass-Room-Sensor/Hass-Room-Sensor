@@ -165,7 +165,7 @@ jobs:
           fi
           semver="${ver_major}.${ver_minor}.${ver_patch}"
 
-          branch="${GITHUB_REF_NAME}"
+          branch="${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
           safe_branch="${branch//\//-}"
 
           git fetch --prune --tags origin
@@ -180,7 +180,7 @@ jobs:
               exit 1
             fi
             count="$(git rev-list --count "${base}..HEAD")"
-            tag="dev-${safe_branch}-${count}-${semver}"
+            tag="${semver}-dev-${safe_branch}-${count}"
           fi
 
           # Fail if tag already exists
