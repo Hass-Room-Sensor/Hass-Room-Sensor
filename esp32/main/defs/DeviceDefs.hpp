@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <sdkconfig.h>
 #include <soc/gpio_num.h>
 
 #endif // !HASS_SENSOR_SKIP_INCLUDES
