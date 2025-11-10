@@ -6,7 +6,7 @@
 
 namespace sensors {
 Battery::Battery()
-        : channels(std::vector<espp::AdcConfig>{{.unit = ADC_UNIT_2, .channel = ADC_CHANNEL_0, .attenuation = ADC_ATTEN_DB_12}}), adc(espp::OneshotAdc({
+        : channels(std::vector<espp::AdcConfig>{{.unit = ADC_UNIT_2, .channel = ADC_CHANNEL_2, .attenuation = ADC_ATTEN_DB_12}}), adc(espp::OneshotAdc({
                                                                                                                                           .unit = ADC_UNIT_1,
                                                                                                                                           .channels = channels,
                                                                                                                                   })) {}

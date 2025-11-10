@@ -143,16 +143,6 @@ void mainLoop() {
         ESP_LOGI(TAG, "Marked current partition as OK and active to avoid rolling back to the old version.");
     }
 
-    while (true) {
-        const std::optional<int> batteryMeasurement = battery.read_measurement();
-        if (batteryMeasurement) {
-            ESP_LOGI(TAG, "[Measurement]: %d mV", *batteryMeasurement);
-        } else {
-            ESP_LOGW(TAG, "Failed to read battery measurement.");
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
 
     // Main loop:
     while (true) {
@@ -163,10 +153,19 @@ void mainLoop() {
             zigbee::ZDevice::get_instance()->update_temp(measurement->temp);
             zigbee::ZDevice::get_instance()->update_hum(measurement->hum);
             zigbee::ZDevice::get_instance()->update_co2(measurement->co2);
-            std::this_thread::sleep_for(std::chrono::seconds(60)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
-        } else {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
+
+        const std::optional<int> batteryMeasurement = battery.read_measurement();
+        if (batteryMeasurement) {
+            ESP_LOGI(TAG, "[Measurement]: %d mV", *batteryMeasurement);
+            uint8_t batteryPercentage = 3700 / (*batteryMeasurement * 100);
+            uint16_t batteryMv = *batteryMeasurement;
+            zigbee::ZDevice::get_instance()->update_battery(batteryPercentage, batteryMv);
+        } else {
+            ESP_LOGW(TAG, "Failed to read battery measurement.");
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(30)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
     }
 }
 
