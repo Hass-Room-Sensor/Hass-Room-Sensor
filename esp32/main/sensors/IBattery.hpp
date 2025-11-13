@@ -14,7 +14,7 @@ class IBattery {
 
     [[nodiscard]] virtual bool init() = 0;
 
-    [[nodiscard]] virtual std::optional<int> read_measurement() = 0;
+    [[nodiscard]] virtual std::optional<int> read_milli_volt() = 0;
 };
 
 } // namespace sensors

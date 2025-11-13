@@ -16,10 +16,27 @@ bool Battery::init() {
     return true;
 }
 
-std::optional<int> Battery::read_measurement() {
+// 3.7V -> 2000
+// 2.5V -> 1350
+// 1.75V -> 950
+
+std::optional<int> Battery::read_milli_volt() {
     // We expect exactly one channel being configured
     assert(channels.size() == 1);
-    return adc.read_mv(channels[0]);
+    const std::optional<int> measurement = adc.read_mv(channels[0]);
+
+    if (!measurement) {
+        return std::nullopt;
+    }
+
+    // We read the following data for calibration form the adc
+    // Real Voltage -> ADC Value
+    // 3700mV -> 2000
+    // 2500mV -> 1350
+    // 1750mV -> 950
+    //
+    // This results in the following formula for converting an ADC sample to mV:
+    return *measurement * 1.85;
 }
 
 } // namespace sensors

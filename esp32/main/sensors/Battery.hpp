@@ -20,7 +20,7 @@ class Battery : public IBattery {
 
     [[nodiscard]] bool init() override;
 
-    [[nodiscard]] std::optional<int> read_measurement() override;
+    [[nodiscard]] std::optional<int> read_milli_volt() override;
 };
 
 } // namespace sensors

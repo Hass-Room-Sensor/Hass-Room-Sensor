@@ -155,11 +155,11 @@ void mainLoop() {
             zigbee::ZDevice::get_instance()->update_co2(measurement->co2);
         }
 
-        const std::optional<int> batteryMeasurement = battery.read_measurement();
-        if (batteryMeasurement) {
-            ESP_LOGI(TAG, "[Measurement]: %d mV", *batteryMeasurement);
-            uint8_t batteryPercentage = 3700 / (*batteryMeasurement * 100);
-            uint16_t batteryMv = *batteryMeasurement;
+        const std::optional<int> battery_mV = battery.read_milli_volt();
+        if (battery_mV) {
+            ESP_LOGI(TAG, "[Measurement]: %d mV", *battery_mV);
+            uint8_t batteryPercentage = 3700 / (*battery_mV * 100);
+            uint16_t batteryMv = *battery_mV;
             zigbee::ZDevice::get_instance()->update_battery(batteryPercentage, batteryMv);
         } else {
             ESP_LOGW(TAG, "Failed to read battery measurement.");
