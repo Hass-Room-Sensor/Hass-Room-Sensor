@@ -147,7 +147,8 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     // ZigBee power source:
     if (ZDevice::get_instance()->powerSourceBattery.is_powered()) {
-        ZDevice::get_instance()->basicClusterConfig.power_source = 0b1 << 0x3; // Set as battery powered device
+        // ZCL enum: 0x03 = Battery
+        ZDevice::get_instance()->basicClusterConfig.power_source = 0x03; // Set as battery powered device
         ESP_LOGI(TAG, "ZigBee device categorized as battery powered.");
     } else {
         ZDevice::get_instance()->basicClusterConfig.power_source = DEFAULT_POWER_SOURCE;
@@ -523,9 +524,9 @@ void ZDevice::setup_battery_cluster() {
     assert(!powerAttrList);
     assert(clusterList);
 
-    powerCfg.main_voltage = 37;      // 3.7V battery ln 100 mV steps
-    powerCfg.main_voltage_max = 55;  // 5.5V battery ln 100 mV steps
-    powerCfg.main_voltage_min = 3.2; // 3.2V battery ln 100 mV steps
+    powerCfg.main_voltage = 37;     // 3.7V battery in 100 mV steps
+    powerCfg.main_voltage_max = 55; // 5.5V battery in 100 mV steps
+    powerCfg.main_voltage_min = 32; // 3.2V battery in 100 mV steps
 
     powerAttrList = esp_zb_power_config_cluster_create(&powerCfg);
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &curBatteryPercentage));

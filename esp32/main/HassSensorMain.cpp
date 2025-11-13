@@ -158,8 +158,20 @@ void mainLoop() {
         const std::optional<int> battery_mV = battery.read_milli_volt();
         if (battery_mV) {
             ESP_LOGI(TAG, "[Measurement]: %d mV", *battery_mV);
-            uint8_t batteryPercentage = 3700 / (*battery_mV * 100);
-            uint16_t batteryMv = *battery_mV;
+            // Convert millivolts to percentage (0-100). Use a simple linear mapping
+            // and clamp to [0,100].
+            constexpr int MV_MIN = 3000; // 0%
+            constexpr int MV_MAX = 4200; // 100%
+            int pct = (*battery_mV - MV_MIN) * 100 / (MV_MAX - MV_MIN);
+            if (pct < 0) {
+                pct = 0;
+            }
+            if (pct > 100) {
+                pct = 100;
+            }
+
+            uint8_t batteryPercentage = static_cast<uint8_t>(pct);
+            uint16_t batteryMv = static_cast<uint16_t>(*battery_mV);
             zigbee::ZDevice::get_instance()->update_battery(batteryPercentage, batteryMv);
         } else {
             ESP_LOGW(TAG, "Failed to read battery measurement.");

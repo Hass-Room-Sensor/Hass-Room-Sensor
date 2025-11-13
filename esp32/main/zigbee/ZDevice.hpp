@@ -63,7 +63,7 @@ class ZDevice {
      * 0x6 | Emergency mains and transfer switch
      * 0x7 | Has a secondary power backup.
      **/
-    static constexpr uint8_t DEFAULT_POWER_SOURCE = 0b1 << 0x4; // Bit 0x4 is set to indicate DC source
+    static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x04;
 
     // Basic cluster information:
     esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, DEFAULT_POWER_SOURCE};
@@ -111,7 +111,7 @@ class ZDevice {
     esp_zb_power_config_cluster_cfg_t powerCfg{};
     esp_zb_attribute_list_s* powerAttrList{nullptr};
     uint8_t curBatteryPercentage{100}; // Default: 50% (0–200 in 0.5% steps), Unknown: 0xFF
-    uint16_t curBatteryMv{37};         // Default: 3.7V = 37 * 100mV
+    uint8_t curBatteryMv{37};          // Default: 3.7V = 37 * 100mV
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
     std::shared_ptr<actuators::Led> led{nullptr};
