@@ -112,6 +112,7 @@ class ZDevice {
     esp_zb_attribute_list_s* powerAttrList{nullptr};
     uint8_t curBatteryPercentage{100}; // Default: 50% (0–200 in 0.5% steps), Unknown: 0xFF
     uint8_t curBatteryMv{37};          // Default: 3.7V = 37 * 100mV
+    uint8_t curBatterySize{0x1};       // Default: Built in battery format
 
     std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
     std::shared_ptr<actuators::Led> led{nullptr};
