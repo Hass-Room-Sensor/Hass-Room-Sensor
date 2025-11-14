@@ -141,6 +141,8 @@ void ZDevice::update_battery(uint8_t batteryPercentage, uint16_t batteryMv) {
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, static_cast<void*>(&curBatteryPercentage), false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, static_cast<void*>(&curBatteryMv), false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, static_cast<void*>(&curBatterySize), false));
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, static_cast<void*>(&curBatteryMAhRating), false));
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, static_cast<void*>(&curBatteryRatedVoltage), false));
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {
@@ -533,6 +535,8 @@ void ZDevice::setup_battery_cluster() {
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &curBatteryPercentage));
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, &curBatteryMv));
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, &curBatterySize));
+    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, &curBatteryMAhRating));
+    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, &curBatteryRatedVoltage));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(clusterList, powerAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
@@ -587,6 +591,8 @@ void ZDevice::on_connected() {
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &ZDevice::get_instance()->curBatteryPercentage, false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, &ZDevice::get_instance()->curBatteryMv, false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, &ZDevice::get_instance()->curBatterySize, false));
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, &ZDevice::get_instance()->curBatteryMAhRating, false));
+    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, &ZDevice::get_instance()->curBatteryRatedVoltage, false));
 }
 } // namespace zigbee
 
