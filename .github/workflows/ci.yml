@@ -61,7 +61,7 @@ jobs:
         with:
           esp_idf_version: v5.5.1
           target: ${{ steps.set_target.outputs.espIdf_target }}
-          path: esp32
+          path: firmware/esp32
           command: idf.py build
           extra_docker_args: '-e IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release;sdkconfig.device"'
   
@@ -80,7 +80,7 @@ jobs:
       - name: Create OTA
         run: |
           # Where to parse the version and details from
-          SDKCFG="esp32/sdkconfig.defaults"
+          SDKCFG="firmware/esp32/sdkconfig.defaults"
 
           # Parse manufacturer + semver parts from sdkconfig
           manuf_id_raw=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER=' "$SDKCFG" | cut -d= -f2)
@@ -97,15 +97,15 @@ jobs:
           version_hex=$(printf '0x%X' "$version_dec")
 
           # Parse the OTA image type. But before that run the preprocessor to figure out which version is valid.
-          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.device_target }} esp32/main/defs/DeviceDefs.hpp -o esp32/main/defs/DeviceDefs.hpp.preprocessor
-          image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' esp32/main/defs/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
-          rm -f esp32/main/defs/DeviceDefs.hpp.preprocessor
+          gcc -E -D HASS_SENSOR_SKIP_INCLUDES -D ${{ steps.set_target.outputs.device_target }} firmware/esp32/main/defs/DeviceDefs.hpp -o firmware/esp32/main/defs/DeviceDefs.hpp.preprocessor
+          image_type=$(grep -Eo 'OTA_IMAGE_TYPE\s*=\s*[0-9]+' firmware/esp32/main/defs/DeviceDefs.hpp.preprocessor | sed 's/.*= *//')
+          rm -f firmware/esp32/main/defs/DeviceDefs.hpp.preprocessor
 
           echo "Using manuf-id=${manuf_id}, image-type=${image_type}, version=${version_hex} (dec=${version_dec})"
 
           mkdir ota_${{ matrix.device_target }}
-          cp esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.bin
-          cp esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.ota
+          cp firmware/esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.bin
+          cp firmware/esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.ota
           cd ota_${{ matrix.device_target }}
           python ../image_builder_tool.py --create hass_sensor_${{ matrix.device_target }}.ota --manuf-id ${manuf_id} --image-type ${image_type} --version ${version_hex} --tag-file hass_sensor_${{ matrix.device_target }}.ota
           zigpy ota generate-index --ota-url-root="" hass_sensor_${{ matrix.device_target }}.ota > ota.json
@@ -197,7 +197,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SDKCFG_DEF="esp32/sdkconfig.defaults"
+          SDKCFG_DEF="firmware/esp32/sdkconfig.defaults"
 
           ver_major=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR=' "$SDKCFG_DEF" | cut -d= -f2)
           ver_minor=$(grep -E '^CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR=' "$SDKCFG_DEF" | cut -d= -f2)
@@ -254,9 +254,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BASE="esp32/ota/index.json"
+          BASE="firmware/esp32/ota/index.json"
           ADD="merged_ota/index.json"
-          OUT="esp32/ota/index.json"
+          OUT="firmware/esp32/ota/index.json"
       
           if [[ ! -f "$BASE" ]]; then
             echo "Base index not found at $BASE"; exit 1
@@ -286,8 +286,8 @@ jobs:
 
       - uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: "[skip ci] Added latest release artifacts to 'esp32/ota/index.json'"
-          file_pattern: esp32/ota/index.json
+          commit_message: "[skip ci] Added latest release artifacts to 'firmware/esp32/ota/index.json'"
+          file_pattern: firmware/esp32/ota/index.json
 
       - name: Upload merged OTA bundle
         uses: actions/upload-artifact@v4

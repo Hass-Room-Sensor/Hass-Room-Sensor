@@ -1,0 +1,2 @@
+# Enable O2 optimization
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
