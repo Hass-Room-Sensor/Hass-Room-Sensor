@@ -16,7 +16,7 @@
 constexpr uint16_t OTA_IMAGE_TYPE = 100;
 
 // Use the internal or external antenna
-constexpr bool HASS_SENSOR_ANTENNA_EXTERNAL = true;
+constexpr bool HASS_SENSOR_ANTENNA_EXTERNAL = false;
 
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_22;

@@ -3,6 +3,8 @@
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "sensors/AbstractScd41.hpp"
+#include "sensors/Battery.hpp"
+#include "sensors/IBattery.hpp"
 #include "soc/gpio_num.h"
 #include "zigbee/ZDevice.hpp"
 #include <array>
@@ -32,6 +34,9 @@
 #include "sensors/Scd41.hpp"
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
 namespace {
+/**
+ * Battery log tag.
+ **/
 const char* TAG = "hassSensor";
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
@@ -106,6 +111,16 @@ void mainLoop() {
         esp_restart();
     }
 
+    // Initialize battery ADC
+    sensors::Battery battery;
+    if (!battery.init()) {
+#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        rgbLed->on(actuators::color_t{30, 0, 0});
+#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        ESP_LOGE(TAG, "Initializing Battery failed. Rebooting...");
+        esp_restart();
+    }
+
     // Setup ZigBee device with initial measurements:
     std::optional<sensors::measurement_t> measurement = std::nullopt;
     do {
@@ -131,6 +146,7 @@ void mainLoop() {
         ESP_LOGI(TAG, "Marked current partition as OK and active to avoid rolling back to the old version.");
     }
 
+
     // Main loop:
     while (true) {
         ESP_LOGI(TAG, "Data ready. Reading...");
@@ -140,10 +156,31 @@ void mainLoop() {
             zigbee::ZDevice::get_instance()->update_temp(measurement->temp);
             zigbee::ZDevice::get_instance()->update_hum(measurement->hum);
             zigbee::ZDevice::get_instance()->update_co2(measurement->co2);
-            std::this_thread::sleep_for(std::chrono::seconds(60)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
-        } else {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
         }
+
+        const std::optional<int> battery_mV = battery.read_milli_volt();
+        if (battery_mV) {
+            ESP_LOGI(TAG, "[Measurement]: %d mV", *battery_mV);
+            // Convert millivolts to percentage (0-100). Use a simple linear mapping
+            // and clamp to [0,100].
+            constexpr int MV_MIN = 3000; // 0%
+            constexpr int MV_MAX = 4200; // 100%
+            int pct = (*battery_mV - MV_MIN) * 100 / (MV_MAX - MV_MIN);
+            if (pct < 0) {
+                pct = 0;
+            }
+            if (pct > 100) {
+                pct = 100;
+            }
+
+            uint8_t batteryPercentage = static_cast<uint8_t>(pct);
+            uint16_t batteryMv = static_cast<uint16_t>(*battery_mV);
+            zigbee::ZDevice::get_instance()->update_battery(batteryPercentage, batteryMv);
+        } else {
+            ESP_LOGW(TAG, "Failed to read battery measurement.");
+        }
+
+        std::this_thread::sleep_for(std::chrono::seconds(30)); // Looks like we can update values via ZigBee every 30 seconds anyway. Ref: https://github.com/espressif/esp-zigbee-sdk/issues/65
     }
 }
 
