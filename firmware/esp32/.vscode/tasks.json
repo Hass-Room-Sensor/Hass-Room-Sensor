@@ -1,0 +1,128 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "🎯 | Target: XIAO ESP32C6",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32c6;"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "🎯 | Target: ESP32-H2 DevKit",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=y\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32h2;"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "🎯 | Target: ESP32-C6 DevKit",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"set -euo pipefail; cd ${workspaceFolder}; rm -f sdkconfig sdkconfig.old sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n\" >> sdkconfig.device; echo \"CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=y\" >> sdkconfig.device;. $HOME/esp/esp-idf/export.sh;idf.py set-target esp32c6;"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "🏗️ | Build",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py build"
+			],
+			"group": "build",
+			"dependsOn": [],
+			"problemMatcher": "$gcc"
+		},
+		{
+			"label": "📸 | Flash",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py -p ${input:serialPort} flash"
+			]
+		},
+		{
+			"label": "👁️ | Monitor",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py -p ${input:serialPort} monitor"
+			]
+		},
+		{
+			"label": "📸 & 👁️ | Flash & Monitor",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py -p ${input:serialPort} flash monitor"
+			]
+		},
+		{
+			"label": "🧼 | Clean",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py clean"
+			]
+		},
+		{
+			"label": "🧼 | Full Clean",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py fullclean && rm -f sdkconfig sdkconfig.old"
+			]
+		},
+		{
+			"label": "♻️ | Clean Flash",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"-lc",
+				"cd ${workspaceFolder} && . $HOME/esp/esp-idf/export.sh && idf.py -p ${input:serialPort} erase-flash"
+			]
+		}
+	],
+	"inputs": [
+		{
+			"id": "serialPort",
+			"type": "promptString",
+			"description": "Serial port for flashing/monitor",
+			"default": "/dev/ttyACM0"
+		}
+	],
+	"options": {
+		"shell": {
+			"executable": "/bin/bash",
+			"args": [
+				"-l",
+				"-c"
+			]
+		},
+		"env": {
+			"IDF_SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.debug;sdkconfig.device"
+		},
+		"cwd": "${workspaceFolder}"
+	},
+	"presentation": {
+		"reveal": "always",
+		"panel": "dedicated",
+		"clear": false,
+		"showReuseMessage": false
+	}
+}
