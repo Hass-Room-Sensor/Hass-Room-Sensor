@@ -1,31 +1,31 @@
 {
   "firmwares": [
     {
-      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-feature-target-specification-13/hass_sensor_esp32C6DevKit.ota",
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-develop-3/hass_sensor_esp32C6DevKit.ota",
       "file_version": 16785408,
       "image_type": 300,
       "manufacturer_id": 0,
       "changelog": "",
-      "checksum": "sha3-256:4c9a03c22fb5815a1fa1e1e562872b47dad8486c45a4d731a6a03c481773b88e",
-      "file_size": 667678
+      "checksum": "sha3-256:b3953cdcd7110362cc73dea9981a90e94930217266918a23d9c326ecd60fc617",
+      "file_size": 997838
     },
     {
-      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-feature-target-specification-13/hass_sensor_esp32H2DevKit.ota",
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-develop-3/hass_sensor_esp32H2DevKit.ota",
       "file_version": 16785408,
       "image_type": 200,
       "manufacturer_id": 0,
       "changelog": "",
-      "checksum": "sha3-256:72a9b56414895da1fd9da153324b9a32b0a65aa1b8781e9626e13fd154e4638b",
-      "file_size": 684286
+      "checksum": "sha3-256:762451f845711fb6e17d2540cbfffd9c92be859eab2ea7e2e2f0e331f9864429",
+      "file_size": 1017294
     },
     {
-      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-feature-target-specification-13/hass_sensor_seedStudioXiao.ota",
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.2.0-dev-develop-3/hass_sensor_seedStudioXiao.ota",
       "file_version": 16785408,
       "image_type": 100,
       "manufacturer_id": 0,
       "changelog": "",
-      "checksum": "sha3-256:6afa4cf716a95cc2e63cc904c446408a38485a862fcfa4239f4a4f7d239ded48",
-      "file_size": 667678
+      "checksum": "sha3-256:373a63d6684fe8a5d1683052db7edf93c6e640e4264638fcd28eb2430dad9817",
+      "file_size": 997838
     }
   ]
 }
