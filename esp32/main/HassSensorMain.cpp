@@ -34,6 +34,9 @@
 #include "sensors/Scd41.hpp"
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
 namespace {
+/**
+ * Battery log tag.
+ **/
 const char* TAG = "hassSensor";
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6

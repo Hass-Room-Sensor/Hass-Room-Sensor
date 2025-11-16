@@ -10,6 +10,11 @@ class Battery : public IBattery {
     std::vector<espp::AdcConfig> channels;
     espp::OneshotAdc adc;
 
+    /**
+     * Battery log tag.
+     **/
+    const char* TAG = "Battery";
+
   public:
     Battery();
     Battery(Battery&&) = default;
@@ -20,6 +25,11 @@ class Battery : public IBattery {
 
     [[nodiscard]] bool init() override;
 
+    /**
+     * Tries to read a fixed amount of ADC measurements and calculates the average from it.
+     * Then the value gets converted to mV.
+     * If reading fails after a set amount of attempts std::nullopt will be returned.
+     **/
     [[nodiscard]] std::optional<int> read_milli_volt() override;
 };
 
