@@ -17,10 +17,6 @@ bool Battery::init() {
     return true;
 }
 
-// 3.7V -> 2000
-// 2.5V -> 1350
-// 1.75V -> 950
-
 std::optional<int> Battery::read_milli_volt() {
     // We expect exactly one channel being configured
     assert(channels.size() == 1);
