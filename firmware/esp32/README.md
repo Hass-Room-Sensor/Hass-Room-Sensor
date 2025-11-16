@@ -54,7 +54,7 @@ Follow the following guide to install the standard toolchain: https://docs.espre
 
 ```bash
 # Ensure you are inside this directory
-cd esp32/
+cd firmware/esp32/
 
 # Select a debug or release build
 export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug;sdkconfig.device"
@@ -107,7 +107,7 @@ zha:
       extra_providers:
         - type: zigpy_remote # The `zigpy_remote` provider type requires a URL that points to an OTA index file
           # This will give you a stable feed of updates. For unstable but more frequent updates replace 'main' with 'develop'.
-          url: https://raw.githubusercontent.com/Hass-Room-Sensor/Hass-Room-Sensor/refs/heads/main/esp32/ota/index.json
+          url: https://raw.githubusercontent.com/Hass-Room-Sensor/Hass-Room-Sensor/refs/heads/main/firmware/esp32/ota/index.json
       otau_directory: /config/www/ota
 ```
 
@@ -128,7 +128,7 @@ This guide details how to manually build an Over The Air (OTA) update for use wi
 ```bash
 # Clone the repository and change into it
 git clone https://github.com/Hass-Room-Sensor/Hass-Room-Sensor.git
-cd Hass-Room-Sensor/esp32
+cd Hass-Room-Sensor/firmware/esp32
 
 # Follow the steps from above for building for the correct device.
 # Once done, continue here. And check if the output binary exists.
