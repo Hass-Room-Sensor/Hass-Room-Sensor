@@ -26,6 +26,33 @@
       "changelog": "",
       "checksum": "sha3-256:373a63d6684fe8a5d1683052db7edf93c6e640e4264638fcd28eb2430dad9817",
       "file_size": 997838
+    },
+    {
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.3.0/hass_sensor_esp32C6DevKit.ota",
+      "file_version": 16789504,
+      "image_type": 300,
+      "manufacturer_id": 0,
+      "changelog": "",
+      "checksum": "sha3-256:021051d405af5669b72f820e761643bc28382141788de3cf228be0c51a83ee30",
+      "file_size": 997838
+    },
+    {
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.3.0/hass_sensor_esp32H2DevKit.ota",
+      "file_version": 16789504,
+      "image_type": 200,
+      "manufacturer_id": 0,
+      "changelog": "",
+      "checksum": "sha3-256:67fa96425c4ff61d5a4bdca4d8668a5a9e1d58577e403484b014588a53a3fe3f",
+      "file_size": 1017310
+    },
+    {
+      "binary_url": "https://github.com/Hass-Room-Sensor/Hass-Room-Sensor/releases/download/1.3.0/hass_sensor_seedStudioXiao.ota",
+      "file_version": 16789504,
+      "image_type": 100,
+      "manufacturer_id": 0,
+      "changelog": "",
+      "checksum": "sha3-256:5b123ff4da8bfac060c1cfe1203b71ac09a8199b2b1675f2474bd7148cac654c",
+      "file_size": 997838
     }
   ]
 }
