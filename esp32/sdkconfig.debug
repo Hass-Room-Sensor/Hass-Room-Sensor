@@ -1,2 +1,0 @@
-# Enable debug build without optimization
-CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
