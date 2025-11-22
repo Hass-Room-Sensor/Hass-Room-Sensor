@@ -88,10 +88,18 @@ void mainLoop() {
 
 #ifdef HASS_SENSOR_STATUS_LED_ENABLED
     // Initialize the seed studio XIAO ESP32C6 LED:
-    std::shared_ptr<actuators::Led> led = std::make_shared<actuators::Led>(HASS_SENSOR_STATUS_LED_GPIO, HASS_SENSOR_STATUS_LED_LOW_ACTIVE);
-    led->init();
-    led->set_off();
-    zigbee::ZDevice::get_instance()->set_led(led);
+    std::shared_ptr<actuators::Led> statusLed = std::make_shared<actuators::Led>(HASS_SENSOR_STATUS_LED_GPIO, HASS_SENSOR_STATUS_LED_LOW_ACTIVE, HASS_SENSOR_STATUS_LED_MAX_BRIGHTNESS_PERCENT);
+    statusLed->init();
+    statusLed->set_off();
+    zigbee::ZDevice::get_instance()->set_led(statusLed);
+
+    std::shared_ptr<actuators::Led> redLed = std::make_shared<actuators::Led>(HASS_SENSOR_RED_LED_GPIO, HASS_SENSOR_RED_LED_LOW_ACTIVE, HASS_SENSOR_RED_LED_MAX_BRIGHTNESS_PERCENT);
+    redLed->init();
+    redLed->set_off();
+
+    std::shared_ptr<actuators::Led> greenLed = std::make_shared<actuators::Led>(HASS_SENSOR_GREEN_LED_GPIO, HASS_SENSOR_GREEN_LED_LOW_ACTIVE, HASS_SENSOR_GREEN_LED_MAX_BRIGHTNESS_PERCENT);
+    greenLed->init();
+    greenLed->set_off();
 #endif // HASS_SENSOR_STATUS_LED_ENABLED
 
     // Initialize the SCD41 sensor:
