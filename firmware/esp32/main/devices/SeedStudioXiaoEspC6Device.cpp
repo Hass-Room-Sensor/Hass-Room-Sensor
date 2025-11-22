@@ -50,7 +50,7 @@ void SeedStudioXiaoEspC6Device::on_device_state_changed(zigbee::ZigbeeDeviceStat
             greenLed.set_blink(std::chrono::milliseconds{500});
             break;
         case zigbee::ZigbeeDeviceState::OTA:
-            redLed.set_blink(std::chrono::milliseconds{500});
+            greenLed.set_on();
             break;
         case zigbee::ZigbeeDeviceState::CONNECTED:
         default:

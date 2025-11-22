@@ -21,6 +21,10 @@ Besides multiple protocols, multiple devices are supported.
 
 ## Device Specifics
 
+### seed studio XIAO ESPC6
+
+![LED behavior](docs/seed_studio_xiao_esp32_c6_sensor_board.svg)
+
 ### Official ESP32 H2 Dev Kit
 
 #### Pinout
