@@ -150,9 +150,9 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ESP_LOGI(TAG, "ZigBee device categorized as DC powered.");
     }
 
-    // By default sleep is disabled. It will be enabled as soon as the device is connected to a ZigBee network.
+    // Enable light sleep
     esp_zb_sleep_enable(false);
-    esp_zb_sleep_set_threshold(std::chrono::milliseconds(20).count());
+    esp_zb_sleep_set_threshold(std::chrono::milliseconds(5).count());
     ESP_LOGI(TAG, "ZigBee sleep threshold set.");
 
     // ZigBee end device config:
@@ -160,7 +160,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     zb_nwk_cfg.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
     zb_nwk_cfg.install_code_policy = false;
     zb_nwk_cfg.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
-    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(3000).count();
+    zb_nwk_cfg.nwk_cfg.zed_cfg.keep_alive = std::chrono::milliseconds(5000).count(); // Send a keep alive signal every 4 seconds to the coordinator
     esp_zb_init(&zb_nwk_cfg);
     ESP_LOGI(TAG, "ZigBee init done.");
 
@@ -536,30 +536,6 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
 
     if (deviceListener) {
         deviceListener->on_device_state_changed(deviceState);
-    }
-
-    // The device can only go to sleep when it is actually connected to a network.
-    switch (deviceState) {
-        case ZigbeeDeviceState::SETUP:
-            esp_zb_sleep_enable(false);
-            break;
-
-        case ZigbeeDeviceState::OTA:
-            esp_zb_sleep_enable(false);
-            break;
-
-        case ZigbeeDeviceState::CONNECTING:
-            esp_zb_sleep_enable(false);
-            break;
-
-        case ZigbeeDeviceState::CONNECTED:
-            esp_zb_sleep_enable(true);
-            break;
-
-        default:
-            ESP_LOGE(TAG, "Unknown device state: %d", static_cast<uint8_t>(deviceState));
-            esp_zb_sleep_enable(false);
-            break;
     }
 }
 

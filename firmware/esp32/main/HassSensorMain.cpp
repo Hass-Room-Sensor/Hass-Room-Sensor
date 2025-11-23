@@ -111,7 +111,6 @@ void mainLoop() {
 
         const std::optional<int> battery_mV = battery.read_milli_volt();
         if (battery_mV) {
-            ESP_LOGI(TAG, "[Measurement]: %d mV", *battery_mV);
             // Convert millivolts to percentage (0-100). Use a simple linear mapping
             // and clamp to [0,100].
             constexpr int MV_MIN = 3000; // 0%
@@ -123,6 +122,8 @@ void mainLoop() {
             if (pct > 100) {
                 pct = 100;
             }
+
+            ESP_LOGI(TAG, "[Measurement]: %d mV => %d %%", *battery_mV, pct);
 
             uint8_t batteryPercentage = static_cast<uint8_t>(pct);
             uint16_t batteryMv = static_cast<uint16_t>(*battery_mV);

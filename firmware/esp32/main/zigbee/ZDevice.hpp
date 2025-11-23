@@ -39,7 +39,7 @@ class ZDevice {
      * 0x6 | Emergency mains and transfer switch
      * 0x7 | Has a secondary power backup.
      **/
-    static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x04;
+    static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x03;
 
     // Basic cluster information:
     esp_zb_basic_cluster_cfg_t basicClusterConfig{ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE, DEFAULT_POWER_SOURCE};
