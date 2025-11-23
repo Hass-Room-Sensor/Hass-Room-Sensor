@@ -1,8 +1,8 @@
 #pragma once
 
-#include "actuators/Led.hpp"
-#include "actuators/RgbLed.hpp"
+#include "devices/AbstractDeviceEventListener.hpp"
 #include "sensors/GpioInput.hpp"
+#include "zigbee/ZigbeeDeviceState.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -20,30 +20,6 @@ extern "C" {
 namespace zigbee {
 class ZDevice {
   public:
-    enum class DeviceState : uint8_t {
-        /**
-         * The state when the device is factory reset and not associated with any ZigBee network yet.
-         * Entering sleep is not possible in this state.
-         **/
-        SETUP,
-        /**
-         * The device is associated to a ZigBee network, but is not connected right now.
-         * The device actively tries to join the network again.
-         * Entering sleep is not possible in this state.
-         **/
-        CONNECTING,
-        /**
-         * The device is associated with a ZigBee network and connected to it.
-         * The device can go to sleep.
-         **/
-        CONNECTED,
-        /**
-         * A OTA (Over The Air) update process is running.
-         * The device can not go to sleep.
-         **/
-        OTA
-    };
-
     static const char* TAG;
 
   private:
@@ -116,8 +92,9 @@ class ZDevice {
     uint8_t curBatteryRatedVoltage{37}; // Default: 3.7V = 37 * 100mV
     uint16_t curBatteryMAhRating{50};   // Default: 500 mAh = 50mAh * 10mAh
 
-    std::shared_ptr<actuators::RgbLed> rgbLed{nullptr};
-    std::shared_ptr<actuators::Led> led{nullptr};
+    // The underlying hardware device e.g. an ESP32H2DevKit or ESP32C6DevKit listening for events.
+    // The device then will use device specific hardware to react on the event e.g. turn on an LED.
+    std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener{nullptr};
 
     // Reset GPIO used for factory resetting the ZigBee stack.
     sensors::GpioInput resetGpio{GPIO_NUM_1};
@@ -125,7 +102,7 @@ class ZDevice {
     sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
 
     // The curent device state. Used to ditermin if the device can go to sleep.
-    DeviceState deviceState{DeviceState::SETUP};
+    ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
 
     struct OtaStatus {
         uint16_t tag{0};
@@ -162,12 +139,11 @@ class ZDevice {
     void update_co2(uint16_t co2);
     void update_battery(uint8_t batteryPercentage, uint16_t batteryMv);
 
-    void set_led(std::shared_ptr<actuators::RgbLed> rgbLed);
-    void set_led(std::shared_ptr<actuators::Led> Led);
+    void set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener);
 
     void reset() const;
 
-    void set_device_state(DeviceState newState);
+    void set_device_state(ZigbeeDeviceState newState);
     void on_connected();
 
   private:
@@ -184,7 +160,5 @@ class ZDevice {
     void set_manufacturer(const std::string& manufacturerStr);
     void set_version_details(const std::string& versionStr);
     void set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId);
-
-    void set_led_color(const actuators::color_t& color);
 };
 } // namespace zigbee

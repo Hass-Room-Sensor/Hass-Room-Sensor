@@ -29,24 +29,13 @@
 #include <chrono>
 #include <cmath>
 #include <esp_check.h>
-#include <optional>
 #include <vector>
 
 namespace zigbee {
 const char* ZDevice::TAG = "ZDevice";
 
-void ZDevice::set_led(std::shared_ptr<actuators::RgbLed> rgbLed) {
-    this->rgbLed = std::move(rgbLed);
-}
-
-void ZDevice::set_led(std::shared_ptr<actuators::Led> led) {
-    this->led = std::move(led);
-}
-
-void ZDevice::set_led_color(const actuators::color_t& color) {
-    if (rgbLed) {
-        rgbLed->on(color);
-    }
+void ZDevice::set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener) {
+    deviceListener = std::move(listener);
 }
 
 const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
@@ -73,6 +62,9 @@ esp_err_t ZDevice::power_saver_init() {
 
 void ZDevice::init(double temp, double hum, uint16_t co2) {
     ESP_LOGI(TAG, "Initializing ZigBee device...");
+    if (!deviceListener) {
+        ESP_LOGW(TAG, "No device listener registered; hardware callbacks disabled.");
+    }
 
     // Set initial measurements. Values are multiplied by 100 to avoid floating point numbers.
     curTemp = static_cast<int16_t>(temp * 100);
@@ -185,7 +177,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ZDevice::get_instance()->setup_co2_cluster();
 
     // Debug LED ON/OFF:
-    if (ZDevice::get_instance()->rgbLed) {
+    if (ZDevice::get_instance()->deviceListener && ZDevice::get_instance()->deviceListener->has_debug_led()) {
         ZDevice::get_instance()->setup_debug_led_cluster();
     }
 
@@ -255,12 +247,8 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
             identifyTime = *static_cast<uint16_t*>(msg->attribute.data.value);
         }
 
-        if (zigbee::ZDevice::get_instance()->led) {
-            if (identifyTime > 0) {
-                zigbee::ZDevice::get_instance()->led->set_blink(std::chrono::milliseconds(500), std::make_optional<size_t>(identifyTime * 2));
-            } else {
-                zigbee::ZDevice::get_instance()->led->set_off();
-            }
+        if (zigbee::ZDevice::get_instance()->deviceListener) {
+            zigbee::ZDevice::get_instance()->deviceListener->on_identify(identifyTime);
         }
         ESP_LOGD(TAG, "identifyTime=%u -> %s blinking", static_cast<unsigned>(identifyTime), (identifyTime > 0 ? "start" : "stop"));
         return ESP_OK;
@@ -270,12 +258,8 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* ms
     if (msg->info.dst_endpoint == LIGHT_ON_OFF_ENDPOINT_ID.endpoint && msg->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF && msg->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && msg->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_BOOL) {
         bool& curDebugLed = zigbee::ZDevice::get_instance()->curDebugLed;
         curDebugLed = msg->attribute.data.value ? *(bool*) msg->attribute.data.value : curDebugLed;
-        if (zigbee::ZDevice::get_instance()->rgbLed) {
-            if (curDebugLed) {
-                zigbee::ZDevice::get_instance()->rgbLed->enable();
-            } else {
-                zigbee::ZDevice::get_instance()->rgbLed->disable();
-            }
+        if (zigbee::ZDevice::get_instance()->deviceListener && zigbee::ZDevice::get_instance()->deviceListener->has_debug_led()) {
+            zigbee::ZDevice::get_instance()->deviceListener->set_debug_led(curDebugLed);
         }
         ESP_LOGD(TAG, "Debug LED changed to: %s", curDebugLed ? "on" : "off");
     }
@@ -346,7 +330,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
                 assert(otaPartition);
                 ret = esp_ota_begin(otaPartition, 0, &otaHandle);
                 ESP_RETURN_ON_ERROR(ret, TAG, "Failed to begin OTA partition, status: %s", esp_err_to_name(ret));
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::OTA);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::OTA);
                 break;
 
             case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_RECEIVE:
@@ -408,7 +392,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
                 writtenTotal = 0;
                 zigbee::ZDevice::get_instance()->otaStatus.tagReceived = false;
                 ESP_LOGE(TAG, "OTA aborted: %s", esp_err_to_name(ret));
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTED);
                 break;
 
             default:
@@ -514,12 +498,16 @@ void ZDevice::setup_co2_cluster() {
 void ZDevice::setup_debug_led_cluster() {
     // Ensure this is called only once
     assert(!debugLedClusterList);
+    if (!deviceListener || !deviceListener->has_debug_led()) {
+        ESP_LOGW(TAG, "Debug LED cluster setup requested without a matching device listener.");
+        return;
+    }
 
     debugLedCfg.basic_cfg.power_source = DEFAULT_POWER_SOURCE;
     debugLedCfg.basic_cfg.zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE;
 
     debugLedClusterList = esp_zb_on_off_light_clusters_create(&debugLedCfg);
-    curDebugLed = rgbLed->is_enabled();
+    curDebugLed = deviceListener->is_debug_led_enabled();
 }
 
 void ZDevice::setup_battery_cluster() {
@@ -540,36 +528,35 @@ void ZDevice::setup_battery_cluster() {
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(clusterList, powerAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
-void ZDevice::set_device_state(DeviceState newState) {
+void ZDevice::set_device_state(ZigbeeDeviceState newState) {
     if (deviceState == newState) {
         return;
     }
     deviceState = newState;
 
+    if (deviceListener) {
+        deviceListener->on_device_state_changed(deviceState);
+    }
+
     // The device can only go to sleep when it is actually connected to a network.
     switch (deviceState) {
-        case DeviceState::SETUP:
-            set_led_color(actuators::color_t{30, 0, 30}); // Purple
+        case ZigbeeDeviceState::SETUP:
             esp_zb_sleep_enable(false);
             break;
 
-        case DeviceState::OTA:
-            set_led_color(actuators::color_t{30, 30, 0}); // Yellow
+        case ZigbeeDeviceState::OTA:
             esp_zb_sleep_enable(false);
             break;
 
-        case DeviceState::CONNECTING:
-            set_led_color(actuators::color_t{0, 0, 30}); // Blue
+        case ZigbeeDeviceState::CONNECTING:
             esp_zb_sleep_enable(false);
             break;
 
-        case DeviceState::CONNECTED:
-            set_led_color(actuators::color_t{0, 0, 30}); // Green
+        case ZigbeeDeviceState::CONNECTED:
             esp_zb_sleep_enable(true);
             break;
 
         default:
-            set_led_color(actuators::color_t{30, 0, 0}); // Red
             ESP_LOGE(TAG, "Unknown device state: %d", static_cast<uint8_t>(deviceState));
             esp_zb_sleep_enable(false);
             break;
@@ -577,14 +564,14 @@ void ZDevice::set_device_state(DeviceState newState) {
 }
 
 void ZDevice::on_connected() {
-    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTED);
+    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTED);
 
     esp_zb_ieee_addr_t extended_pan_id;
     esp_zb_get_extended_pan_id(extended_pan_id);
     ESP_LOGI(zigbee::ZDevice::TAG, "Connected (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)", extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4], extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0], esp_zb_get_pan_id(), esp_zb_get_current_channel());
 
     // Report the current debug LED state
-    if (rgbLed) {
+    if (deviceListener && deviceListener->has_debug_led()) {
         ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(LIGHT_ON_OFF_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_ON_OFF, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, &ZDevice::get_instance()->curDebugLed, false));
     }
     // Report the current battery percentage
@@ -602,7 +589,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
 
     switch (sigType) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
-            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
             ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized");
             esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
             break;
@@ -612,7 +599,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             if (err_status == ESP_OK) {
                 ESP_LOGI(zigbee::ZDevice::TAG, "Device state: %s", esp_zb_bdb_is_factory_new() ? "factory new" : "configured");
                 if (esp_zb_bdb_is_factory_new()) {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::SETUP);
+                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::SETUP);
                     ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
                     esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
                 } else {
@@ -620,7 +607,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
                 }
             } else {
                 /* commissioning failed */
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
                 ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s).", esp_err_to_name(err_status));
                 ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
@@ -631,7 +618,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             if (err_status == ESP_OK) {
                 zigbee::ZDevice::get_instance()->on_connected();
             } else {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
                 ESP_LOGI(zigbee::ZDevice::TAG, "Rejoining a known network was not successful (status: %s). Attempting to join again...", esp_err_to_name(err_status));
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             }
@@ -648,7 +635,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             break;
 
         case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:
-            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
             ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device unavailable (status: %s). Trying to rejoin...", esp_err_to_name(err_status));
             esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             break;
@@ -665,11 +652,11 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
         case ESP_ZB_ZDO_SIGNAL_LEAVE: {
             const esp_zb_zdo_signal_leave_params_t* leaveParams = static_cast<esp_zb_zdo_signal_leave_params_t*>(esp_zb_app_signal_get_params(signal_struct->p_app_signal));
             if (leaveParams->leave_type == ESP_ZB_NWK_LEAVE_TYPE_RESET) {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::SETUP);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::SETUP);
                 ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with device reset request and error status '%s' received.", esp_err_to_name(err_status));
                 esp_zb_factory_reset();
             } else {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZDevice::DeviceState::CONNECTING);
+                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
                 ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with error status '%s' received.", esp_err_to_name(err_status));
             }
         } break;

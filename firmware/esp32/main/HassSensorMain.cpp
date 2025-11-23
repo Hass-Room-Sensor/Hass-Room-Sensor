@@ -1,4 +1,6 @@
 #include "defs/DeviceDefs.hpp"
+#include "devices/AbstractDeviceEventListener.hpp"
+#include "devices/DeviceEventListenerFactory.hpp"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
@@ -16,18 +18,6 @@
 #include <optional>
 #include <thread>
 
-#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
-#include "driver/gpio.h"
-#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
-
-#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-#include "actuators/RgbLed.hpp"
-#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-
-#ifdef HASS_SENSOR_STATUS_LED_ENABLED
-#include "actuators/Led.hpp"
-#endif // HASS_SENSOR_STATUS_LED_ENABLED
-
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
 #include "sensors/Scd41Mock.hpp"
 #else
@@ -35,39 +25,15 @@
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
 namespace {
 /**
- * Battery log tag.
+ * Log tag.
  **/
 const char* TAG = "hassSensor";
-
-#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
-/**
- * seed studio XIAO ESPC6 device specific init.
- **/
-void seed_studio_xiao_espc6_init() {
-    // Enable the RF Switch
-    gpio_reset_pin(gpio_num_t::GPIO_NUM_3);
-    gpio_set_direction(gpio_num_t::GPIO_NUM_3, GPIO_MODE_OUTPUT);
-    gpio_set_level(gpio_num_t::GPIO_NUM_3, 0);
-
-    // Switch between the built-in and external antenna
-    gpio_reset_pin(gpio_num_t::GPIO_NUM_14);
-    gpio_set_direction(gpio_num_t::GPIO_NUM_14, GPIO_MODE_OUTPUT);
-    gpio_set_level(gpio_num_t::GPIO_NUM_14, HASS_SENSOR_ANTENNA_EXTERNAL ? 1 : 0);
-
-    ESP_LOGI(TAG, "XIAO ESPC6 antenna: %s", ::HASS_SENSOR_ANTENNA_EXTERNAL ? "external" : "internal");
-}
-#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
-
 } // namespace
 
 void mainLoop() {
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
 
     ESP_LOGI(TAG, "Starting HASS environment sensor version %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
-
-#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
-    seed_studio_xiao_espc6_init();
-#endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
     // Initialize the flash:
     esp_err_t err = nvs_flash_init();
@@ -77,22 +43,11 @@ void mainLoop() {
     }
     ESP_ERROR_CHECK(err);
 
-
-#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-    // Initialize the official ESP32 dev kit RGB LED:
-    std::shared_ptr<actuators::RgbLed> rgbLed = std::make_shared<actuators::RgbLed>(HASS_SENSOR_DEBUG_RGB_LED_GPIO);
-    rgbLed->init();
-    rgbLed->on(actuators::color_t{0, 0, 30});
-    zigbee::ZDevice::get_instance()->set_led(rgbLed);
-#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-
-#ifdef HASS_SENSOR_STATUS_LED_ENABLED
-    // Initialize the seed studio XIAO ESP32C6 LED:
-    std::shared_ptr<actuators::Led> led = std::make_shared<actuators::Led>(HASS_SENSOR_STATUS_LED_GPIO, HASS_SENSOR_STATUS_LED_LOW_ACTIVE);
-    led->init();
-    led->set_off();
-    zigbee::ZDevice::get_instance()->set_led(led);
-#endif // HASS_SENSOR_STATUS_LED_ENABLED
+    // Initialize device
+    std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener = devices::create_device_event_listener();
+    assert(deviceListener);
+    deviceListener->init();
+    zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
 
     // Initialize the SCD41 sensor:
     std::unique_ptr<sensors::AbstractScd41> scd41{nullptr};
@@ -104,9 +59,7 @@ void mainLoop() {
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
 
     if (!scd41->init()) {
-#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-        rgbLed->on(actuators::color_t{30, 0, 0});
-#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        deviceListener->indicate_error();
         ESP_LOGE(TAG, "Initializing SCD41 failed. Rebooting...");
         esp_restart();
     }
@@ -114,9 +67,7 @@ void mainLoop() {
     // Initialize battery ADC
     sensors::Battery battery;
     if (!battery.init()) {
-#ifdef HASS_SENSOR_DEBUG_RGB_LED_ENABLED
-        rgbLed->on(actuators::color_t{30, 0, 0});
-#endif // HASS_SENSOR_DEBUG_RGB_LED_ENABLED
+        deviceListener->indicate_error();
         ESP_LOGE(TAG, "Initializing Battery failed. Rebooting...");
         esp_restart();
     }

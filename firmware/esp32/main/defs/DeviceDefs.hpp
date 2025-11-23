@@ -26,6 +26,15 @@ constexpr gpio_num_t HASS_SENSOR_SCD4X_SCL_GPIO = gpio_num_t::GPIO_NUM_23;
 #define HASS_SENSOR_STATUS_LED_ENABLED
 constexpr gpio_num_t HASS_SENSOR_STATUS_LED_GPIO = gpio_num_t::GPIO_NUM_15;
 constexpr bool HASS_SENSOR_STATUS_LED_LOW_ACTIVE = true;
+constexpr uint8_t HASS_SENSOR_STATUS_LED_MAX_BRIGHTNESS_PERCENT = 100;
+
+constexpr gpio_num_t HASS_SENSOR_RED_LED_GPIO = gpio_num_t::GPIO_NUM_1;
+constexpr bool HASS_SENSOR_RED_LED_LOW_ACTIVE = true;
+constexpr uint8_t HASS_SENSOR_RED_LED_MAX_BRIGHTNESS_PERCENT = 1; // Yes, 1% max brightness is enough
+
+constexpr gpio_num_t HASS_SENSOR_GREEN_LED_GPIO = gpio_num_t::GPIO_NUM_0;
+constexpr bool HASS_SENSOR_GREEN_LED_LOW_ACTIVE = true;
+constexpr uint8_t HASS_SENSOR_GREEN_LED_MAX_BRIGHTNESS_PERCENT = 1; // Yes, 1% max brightness is enough
 
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
