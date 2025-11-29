@@ -31,7 +31,7 @@ const char* TAG = "hassSensor";
 } // namespace
 
 void mainLoop() {
-    esp_log_level_set(TAG, ESP_LOG_VERBOSE);
+    esp_log_level_set(TAG, ESP_LOG_DEBUG);
 
     ESP_LOGI(TAG, "Starting HASS environment sensor version %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
 
