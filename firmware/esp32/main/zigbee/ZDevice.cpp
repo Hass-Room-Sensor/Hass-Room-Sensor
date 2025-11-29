@@ -539,6 +539,10 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
     }
 }
 
+ZigbeeDeviceState ZDevice::get_device_state() {
+    return deviceState;
+}
+
 void ZDevice::on_connected() {
     zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTED);
 
@@ -594,8 +598,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signal_struct) {
             if (err_status == ESP_OK) {
                 zigbee::ZDevice::get_instance()->on_connected();
             } else {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-                ESP_LOGI(zigbee::ZDevice::TAG, "Rejoining a known network was not successful (status: %s). Attempting to join again...", esp_err_to_name(err_status));
+                if (zigbee::ZDevice::get_instance()->get_device_state() == zigbee::ZigbeeDeviceState::SETUP) {
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Searching and joining a new network that is open for new devices to join was not successful (status: %s). Attempting again...", esp_err_to_name(err_status));
+                } else {
+                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
+                    ESP_LOGI(zigbee::ZDevice::TAG, "Rejoining a known network was not successful (status: %s). Attempting again...", esp_err_to_name(err_status));
+                }
                 esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
             }
             break;

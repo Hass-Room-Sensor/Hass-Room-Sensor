@@ -97,12 +97,12 @@ class ZDevice {
     std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener{nullptr};
 
     // Reset GPIO used for factory resetting the ZigBee stack.
-    sensors::GpioInput resetGpio{GPIO_NUM_1};
+    sensors::GpioInput resetGpio{GPIO_NUM_16};
     // If set to high the ZigBee stack will be initialized as battery connected device.
     sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
 
     // The curent device state. Used to ditermin if the device can go to sleep.
-    ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
+    ZigbeeDeviceState deviceState{ZigbeeDeviceState::DISABLED};
 
     struct OtaStatus {
         uint16_t tag{0};
@@ -139,11 +139,14 @@ class ZDevice {
     void update_co2(uint16_t co2);
     void update_battery(uint8_t batteryPercentage, uint16_t batteryMv);
 
+    void setup_battery_reporting();
+
     void set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener);
 
     void reset() const;
 
     void set_device_state(ZigbeeDeviceState newState);
+    ZigbeeDeviceState get_device_state();
     void on_connected();
 
   private:

@@ -5,6 +5,10 @@
 namespace zigbee {
 enum class ZigbeeDeviceState : uint8_t {
     /**
+     * The state when the device has not started any ZigBee related actions yet and so connection has been initiated.
+     **/
+    DISABLED,
+    /**
      * The state when the device is factory reset and not yet associated with any ZigBee network yet.
      * Entering sleep is not possible in this state.
      **/
