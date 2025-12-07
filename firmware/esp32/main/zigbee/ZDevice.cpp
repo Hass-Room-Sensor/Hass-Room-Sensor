@@ -520,12 +520,47 @@ void ZDevice::setup_battery_cluster() {
     powerCfg.main_voltage_min = 32; // 3.2V battery in 100 mV steps
 
     powerAttrList = esp_zb_power_config_cluster_create(&powerCfg);
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &curBatteryPercentage));
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, &curBatteryMv));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &curBatteryPercentage));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING, &curBatteryMv));
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, &curBatterySize));
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, &curBatteryMAhRating));
     ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, &curBatteryRatedVoltage));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(clusterList, powerAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
+}
+
+void ZDevice::setup_battery_reporting() {
+    // Configure local reporting so the stack will push battery updates without
+    // the coordinator having to send a ConfigureReporting command.
+    esp_zb_zcl_reporting_info_t pctReporting{};
+    pctReporting.direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
+    pctReporting.ep = DEFAULT_ENDPOINT_ID.endpoint;
+    pctReporting.cluster_id = ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG;
+    pctReporting.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
+    pctReporting.attr_id = ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID;
+    pctReporting.dst.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
+    pctReporting.dst.short_addr = 0; // coordinator
+    pctReporting.dst.endpoint = 0;   // not used for local reporting
+    pctReporting.manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC;
+    pctReporting.u.send_info.min_interval = 10;   // seconds
+    pctReporting.u.send_info.max_interval = 3600; // at least once per hour
+    pctReporting.u.send_info.def_min_interval = pctReporting.u.send_info.min_interval;
+    pctReporting.u.send_info.def_max_interval = pctReporting.u.send_info.max_interval;
+    pctReporting.u.send_info.delta.u8 = 10; // report when 0.5% (1 step) changes
+
+    esp_zb_zcl_reporting_info_t voltReporting = pctReporting;
+    voltReporting.attr_id = ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID;
+    voltReporting.u.send_info.delta.u8 = 1; // 0.1V step (100 mV)
+
+    esp_zb_lock_acquire(portMAX_DELAY);
+    esp_err_t rpt_rc = esp_zb_zcl_update_reporting_info(&pctReporting);
+    if (rpt_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Battery pct reporting setup skipped: %s", esp_err_to_name(rpt_rc));
+    }
+    rpt_rc = esp_zb_zcl_update_reporting_info(&voltReporting);
+    if (rpt_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Battery voltage reporting setup skipped: %s", esp_err_to_name(rpt_rc));
+    }
+    esp_zb_lock_release();
 }
 
 void ZDevice::set_device_state(ZigbeeDeviceState newState) {
@@ -560,6 +595,8 @@ void ZDevice::on_connected() {
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, &ZDevice::get_instance()->curBatterySize, false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, &ZDevice::get_instance()->curBatteryMAhRating, false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, &ZDevice::get_instance()->curBatteryRatedVoltage, false));
+
+    setup_battery_reporting();
 }
 } // namespace zigbee
 
