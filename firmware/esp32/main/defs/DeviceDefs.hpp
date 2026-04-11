@@ -21,6 +21,8 @@ constexpr bool HASS_SENSOR_ANTENNA_EXTERNAL = false;
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_22;
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SCL_GPIO = gpio_num_t::GPIO_NUM_23;
+constexpr gpio_num_t HASS_SENSOR_BME690_SDA_GPIO = HASS_SENSOR_SCD4X_SDA_GPIO;
+constexpr gpio_num_t HASS_SENSOR_BME690_SCL_GPIO = HASS_SENSOR_SCD4X_SCL_GPIO;
 
 // Status LED
 #define HASS_SENSOR_STATUS_LED_ENABLED
@@ -47,6 +49,8 @@ constexpr uint16_t OTA_IMAGE_TYPE = 200;
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_12;
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SCL_GPIO = gpio_num_t::GPIO_NUM_22;
+constexpr gpio_num_t HASS_SENSOR_BME690_SDA_GPIO = HASS_SENSOR_SCD4X_SDA_GPIO;
+constexpr gpio_num_t HASS_SENSOR_BME690_SCL_GPIO = HASS_SENSOR_SCD4X_SCL_GPIO;
 
 // RGB Debug LED
 #define HASS_SENSOR_DEBUG_RGB_LED_ENABLED
@@ -63,6 +67,8 @@ constexpr uint16_t OTA_IMAGE_TYPE = 300;
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_12;
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SCL_GPIO = gpio_num_t::GPIO_NUM_22;
+constexpr gpio_num_t HASS_SENSOR_BME690_SDA_GPIO = HASS_SENSOR_SCD4X_SDA_GPIO;
+constexpr gpio_num_t HASS_SENSOR_BME690_SCL_GPIO = HASS_SENSOR_SCD4X_SCL_GPIO;
 
 // RGB Debug LED
 #define HASS_SENSOR_DEBUG_RGB_LED_ENABLED

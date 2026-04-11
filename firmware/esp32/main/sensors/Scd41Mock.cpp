@@ -13,6 +13,10 @@ std::optional<measurement_t> Scd41Mock::read_measurement() const {
     return measurement_t{42, 24.42, 42.24};
 }
 
+std::optional<measurement_t> Scd41Mock::read_single_shot(std::optional<uint16_t> /*ambientPressureHpa*/) const {
+    return read_measurement();
+}
+
 bool Scd41Mock::get_data_ready_status() const {
     return true;
 }
@@ -52,6 +56,8 @@ void Scd41Mock::set_sensor_altitude(uint16_t /*altitude*/) const {}
 uint16_t Scd41Mock::get_sensor_altitude() const {
     return 500;
 }
+
+void Scd41Mock::set_ambient_pressure(uint16_t /*pressureHpa*/) const {}
 
 void Scd41Mock::persist_settings() const {}
 

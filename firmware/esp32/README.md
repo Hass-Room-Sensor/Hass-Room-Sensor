@@ -8,7 +8,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 |-----------------|-----------|---------------------------------|
 | WIFI (MQTT)     | TODO      |                                 |
 | REST            | TODO      |                                 |
-| ZigBee          | Supported | Temperature, Humidity, CO2, OTA |
+| ZigBee          | Supported | Temperature, Humidity, Pressure, CO2, Battery, OTA |
 | Thread (Matter) | TODO      |                                 |
 
 Besides multiple protocols, multiple devices are supported.
@@ -24,6 +24,18 @@ Besides multiple protocols, multiple devices are supported.
 ### seed studio XIAO ESPC6
 
 ![LED behavior](docs/seed_studio_xiao_esp32_c6_sensor_board.svg)
+
+#### Sensor Topology
+
+The current firmware supports the following sensor topology on the custom board:
+
+| Sensor | Bus | Purpose | Notes |
+|--------|-----|---------|-------|
+| Sensirion SCD4x / SCD41 | I2C | CO2, temperature, humidity | Used in single-shot mode so the ESP can return to deep sleep between measurements. |
+| Bosch BME690 | I2C | Pressure, temperature, humidity | Sampled in forced mode; the measured pressure is forwarded to the SCD41 for pressure compensation. |
+
+Datasheets and vendor references used by the firmware:
+
 
 ### Official ESP32 H2 Dev Kit
 
@@ -47,12 +59,42 @@ Besides multiple protocols, multiple devices are supported.
 | 1    | Zigbee factory reset if high |
 | 3    | ZigBee device power mode. low - DC, high - battery |
 
+## Runtime Model
+
+The firmware follows a strict wake-measure-publish-sleep cycle:
+
+1. The ESP wakes from deep sleep every 5 minutes.
+2. The BME690 is sampled in forced mode, which automatically returns the sensor to sleep after the conversion.
+3. The SCD41 is sampled in single-shot mode while the current pressure from the BME690 is injected as ambient pressure compensation.
+4. Environmental values are only published if the quantized Zigbee attribute changed since the last successful report.
+5. Battery values are only published on startup, when the battery percentage changes, and once every 24 hours.
+6. The Zigbee stack is started only for the short publish window and the ESP returns to deep sleep afterwards.
+
+## Home Assistant / ZHA Compatibility
+
+The Zigbee firmware exposes standard Home Automation profile clusters on the main sensor endpoint:
+
+* Temperature Measurement
+* Relative Humidity Measurement
+* Pressure Measurement
+* Carbon Dioxide Concentration Measurement
+* Power Configuration
+* Basic
+* OTA Upgrade
+* ZHA compatible battery reporting
+
 ## Building
 
 ### ESP-IDF
 
-For building the [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites) version `5.5.1` is required.
-Follow the following guide to install the standard toolchain: https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites
+For building the firmware, [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/linux-setup.html) `6.0` is expected.
+If you installed ESP-IDF with the Espressif installer, activate the environment first, for example:
+
+```bash
+source /var/home/fabian/.espressif/tools/activate_idf_v6.0.sh
+```
+
+The first CMake configure step also fetches the Bosch BME690 SensorAPI from its upstream GitHub repository via CMake `FetchContent`, so an internet connection is required at least once for a fresh build directory.
 
 ### Terminal
 
@@ -83,8 +125,8 @@ rm -f sdkconfig sdkconfig.old
 idf.py set-target $ESP_HARDWARE
 idf.py build
 
-# Flash (change the ttyUSB0 according to where you plug in your ESP)
-idf.py -p /dev/ttyUSB0 flash
+# Flash (change the serial port according to where you plug in your ESP)
+idf.py -p /dev/ttyACM0 flash
 ```
 
 ### Visual Studio Code

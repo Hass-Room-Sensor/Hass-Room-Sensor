@@ -53,4 +53,10 @@ menu "HASS Environment Sensor"
         default n
         help
             Useful in case you do not have a real one connected to the device.
+
+    config HASS_ENVIRONMENT_SENSOR_BME690_MOCK
+        bool "Enable the mock BME690 sensor instead of the real one"
+        default n
+        help
+            Useful in case you do not have a real one connected to the device.
 endmenu
