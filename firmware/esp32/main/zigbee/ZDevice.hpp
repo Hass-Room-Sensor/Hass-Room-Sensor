@@ -100,6 +100,16 @@ class ZDevice {
     static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x04;
     /** Event-group bit that signals a successful Zigbee connection for the current wake session. */
     static constexpr EventBits_t CONNECTED_BIT = BIT0;
+    /**
+     * Supported carbon dioxide publish range in parts per million.
+     *
+     * Zigbee stores the CO2 measurement as a volumetric fraction, but Espressif validates the
+     * value against the configured min/max bounds when `esp_zb_zcl_set_attribute_val()` is called.
+     * Keeping the ppm limits explicit here makes the conversion logic easier to audit.
+     */
+    static constexpr uint16_t CO2_MIN_PPM = 400;
+    /** Upper bound for the Zigbee CO2 cluster in parts per million. */
+    static constexpr uint16_t CO2_MAX_PPM = 5000;
 
     // Basic cluster information.
     /** Backing storage for the Zigbee Basic cluster. */

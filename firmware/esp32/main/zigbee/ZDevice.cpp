@@ -2,6 +2,7 @@
 
 #include "defs/DeviceDefs.hpp"
 
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
@@ -141,9 +142,23 @@ void ZDevice::update_pressure(int16_t pressureDeciKpa) {
 }
 
 void ZDevice::update_co2(uint16_t co2Ppm) {
+    if (co2Ppm < CO2_MIN_PPM || co2Ppm > CO2_MAX_PPM) {
+        ESP_LOGW(TAG, "Skipping CO2 publish: %u ppm is outside Zigbee cluster range [%u, %u] ppm.", co2Ppm, CO2_MIN_PPM, CO2_MAX_PPM);
+        return;
+    }
+
     // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
     curCo2 = static_cast<float_t>(static_cast<double>(co2Ppm) / 1000000.0);
-    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false));
+    const esp_err_t err = esp_zb_zcl_set_attribute_val(
+        DEFAULT_ENDPOINT_ID.endpoint,
+        ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
+        ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID,
+        static_cast<void*>(&curCo2),
+        false);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update CO2 attribute for %u ppm: %s.", co2Ppm, esp_err_to_name(err));
+    }
 }
 
 void ZDevice::update_battery(const models::QuantizedBatteryReading& battery) {
@@ -445,8 +460,9 @@ void ZDevice::setup_co2_cluster() {
     assert(!co2AttrList);
     assert(clusterList);
 
-    co2Cfg.min_measured_value = static_cast<float_t>(400.0 / 1000000.0);
-    co2Cfg.max_measured_value = static_cast<float_t>(5000.0 / 1000000.0);
+    // Zigbee stores CO2 as a volumetric fraction, so the ppm limits are converted to "fraction of one".
+    co2Cfg.min_measured_value = static_cast<float_t>(static_cast<double>(CO2_MIN_PPM) / 1000000.0);
+    co2Cfg.max_measured_value = static_cast<float_t>(static_cast<double>(CO2_MAX_PPM) / 1000000.0);
     co2Cfg.measured_value = curCo2;
     co2AttrList = esp_zb_carbon_dioxide_measurement_cluster_create(&co2Cfg);
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(clusterList, co2AttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));

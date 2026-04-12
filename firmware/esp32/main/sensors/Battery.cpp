@@ -6,11 +6,29 @@
 #include <vector>
 
 namespace sensors {
+namespace {
+/**
+ * Battery divider input on the XIAO ESP32-C6 carrier.
+ *
+ * The KiCad netlist connects `U_Bat_ADC` to XIAO pin `D2`, and ESP-IDF documents that ESP32-C6
+ * `GPIO2` is exposed as `ADC1_CH2`. Using ADC unit 2 on this target is invalid and aborts during
+ * driver initialization, so both the ADC unit and the channel metadata must point at ADC1.
+ *
+ * Sources:
+ * - `ecad/HassRoomSensor.kicad_sch`
+ * - ESP-IDF GPIO reference: `docs/en/api-reference/peripherals/gpio/esp32c6.inc`
+ * - ESP-IDF ADC channel map: `components/soc/esp32c6/include/soc/adc_channel.h`
+ */
+constexpr adc_unit_t BATTERY_ADC_UNIT = ADC_UNIT_1;
+constexpr adc_channel_t BATTERY_ADC_CHANNEL = ADC_CHANNEL_2;
+} // namespace
+
 Battery::Battery()
-        : channels(std::vector<espp::AdcConfig>{{.unit = ADC_UNIT_2, .channel = ADC_CHANNEL_2, .attenuation = ADC_ATTEN_DB_12}}), adc(espp::OneshotAdc({
-                                                                                                                                          .unit = ADC_UNIT_1,
-                                                                                                                                          .channels = channels,
-                                                                                                                                  })) {}
+        : channels(std::vector<espp::AdcConfig>{{.unit = BATTERY_ADC_UNIT, .channel = BATTERY_ADC_CHANNEL, .attenuation = ADC_ATTEN_DB_12}}),
+          adc(espp::OneshotAdc({
+                  .unit = BATTERY_ADC_UNIT,
+                  .channels = channels,
+          })) {}
 
 bool Battery::init() {
     // TODO calibrate

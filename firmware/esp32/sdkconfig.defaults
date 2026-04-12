@@ -1201,7 +1201,11 @@ CONFIG_ESP_PHY_IRAM_OPT=y
 # Power Management
 #
 CONFIG_PM_SLEEP_FUNC_IN_IRAM=y
-CONFIG_PM_ENABLE=y
+# Keep the awake Zigbee commissioning window fully active and only enter deep sleep explicitly from
+# the application. The official deep_sleep example does not rely on ESP-IDF PM/light sleep while the
+# Zigbee stack is running; enabling it here caused idle-hook crashes during repeated steering retries
+# on ESP32-C6.
+# CONFIG_PM_ENABLE is not set
 CONFIG_PM_DFS_INIT_AUTO=y
 # CONFIG_PM_PROFILING is not set
 # CONFIG_PM_TRACE is not set
@@ -1426,7 +1430,9 @@ CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES=1
 # CONFIG_FREERTOS_USE_TRACE_FACILITY is not set
 # CONFIG_FREERTOS_USE_LIST_DATA_INTEGRITY_CHECK_BYTES is not set
 # CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS is not set
-CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+# This firmware uses explicit deep sleep between wake cycles, not automatic tickless/light-sleep
+# transitions while Zigbee commissioning is in progress.
+# CONFIG_FREERTOS_USE_TICKLESS_IDLE is not set
 CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
 # CONFIG_FREERTOS_USE_APPLICATION_TASK_TAG is not set
 # end of Kernel
