@@ -5,7 +5,12 @@
 #include "esp_log.h"
 #include "esp_log_level.h"
 #include "esp_ota_ops.h"
+#ifdef CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#endif
 #include "esp_sleep.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 #include "sensors/AbstractBme690.hpp"
 #include "sensors/AbstractScd41.hpp"
@@ -29,7 +34,14 @@
 
 namespace {
 const char* TAG = "hassSensor";
-// Give the Zigbee stack a short moment to flush attribute updates before power is removed again.
+constexpr bool USE_LIGHT_SLEEP =
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    true;
+#else
+    false;
+#endif
+// Give the Zigbee stack a short moment to flush attribute updates before the firmware either deep
+// sleeps or resumes its long-lived light-sleep idle period.
 constexpr std::chrono::seconds SESSION_SETTLE_TIME{2};
 // First boot may need a much longer join window than normal wake-up reports.
 constexpr std::chrono::minutes INITIAL_JOIN_TIMEOUT{5};
@@ -123,10 +135,58 @@ constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
     return readings;
 }
 
-void schedule_next_wake_and_sleep() {
+/**
+ * Enables automatic light sleep for the long-lived Zigbee sleepy-end-device mode.
+ */
+void init_power_management() {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+#ifdef CONFIG_PM_ENABLE
+    esp_pm_config_t pmConfig{};
+    pmConfig.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    pmConfig.min_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+    pmConfig.light_sleep_enable = true;
+#endif
+    ESP_ERROR_CHECK(esp_pm_configure(&pmConfig));
+    ESP_LOGI(TAG, "Configured automatic light sleep for the Zigbee sleepy end device.");
+#else
+    ESP_LOGW(TAG, "Light sleep mode was selected, but CONFIG_PM_ENABLE is disabled in sdkconfig.");
+#endif
+#endif
+}
+
+/**
+ * Returns the joined Zigbee session to deep sleep until the next measurement interval.
+ */
+[[noreturn]] void schedule_next_wake_and_sleep() {
     ESP_LOGI(TAG, "Entering deep sleep for %lld seconds.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(std::chrono::duration_cast<std::chrono::microseconds>(app::RetainedState::WAKE_INTERVAL).count()));
     esp_deep_sleep_start();
+    for (;;) {
+        vTaskDelay(portMAX_DELAY);
+    }
+}
+
+/**
+ * Blocks the application task until the next scheduled measurement cycle while the Zigbee stack
+ * remains joined and can use automatic light sleep between polls.
+ */
+void wait_for_next_cycle_light_sleep() {
+    const auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(app::RetainedState::WAKE_INTERVAL);
+    ESP_LOGI(TAG, "Waiting %lld seconds before the next measurement cycle while Zigbee stays joined.", std::chrono::duration_cast<std::chrono::seconds>(delay).count());
+    vTaskDelay(pdMS_TO_TICKS(delay.count()));
+}
+
+/**
+ * Waits for a connected Zigbee session if the current cycle needs to publish data.
+ */
+[[nodiscard]] bool ensure_zigbee_connection(const app::RetainedState& retainedState) {
+    if (zigbee::ZDevice::get_instance()->has_connection()) {
+        return true;
+    }
+
+    const auto joinTimeout = retainedState.is_initial_startup() ? INITIAL_JOIN_TIMEOUT : REJOIN_TIMEOUT;
+    return zigbee::ZDevice::get_instance()->wait_for_connection(joinTimeout);
 }
 
 void mark_running_partition_valid() {
@@ -145,36 +205,24 @@ void init_nvs() {
     }
     ESP_ERROR_CHECK(err);
 }
-} // namespace
 
-void mainLoop() {
-    esp_log_level_set(TAG, ESP_LOG_INFO);
-    // ESP-IDF's VFS layer emits very noisy verbose traces under the `vfs_calls` tag. Keep the global
-    // log level unchanged for firmware debugging, but silence that tag completely.
-    esp_log_level_set("vfs_calls", ESP_LOG_INFO);
-
-    ESP_LOGI(TAG, "Starting HASS environment sensor version %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
-
-    init_nvs();
-    mark_running_partition_valid();
-
-    std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener = devices::create_device_event_listener();
-    deviceListener->init();
-
-    app::RetainedState retainedState{};
+/**
+ * Executes one sensor-measurement and optional Zigbee publish cycle.
+ */
+void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
     const models::EnvironmentalReadings environmentalReadings = collect_environmental_readings();
     const models::QuantizedEnvironmentalReadings quantizedEnvironmental = models::quantize(environmentalReadings);
     const std::optional<models::BatteryReading> batteryReading = read_battery();
     const std::optional<models::QuantizedBatteryReading> quantizedBattery = batteryReading ? std::make_optional(models::quantize(*batteryReading)) : std::nullopt;
 
-    // Environmental values are reported every five minutes only when any quantized attribute changed.
+    // Temperature and humidity are refreshed on every wake; pressure and CO2 still rely on change detection.
     const bool shouldReportEnvironment = retainedState.should_report_environment(quantizedEnvironmental);
     // Battery is reported on startup, on percentage changes, and once per day as a keepalive.
     const bool shouldReportBattery = quantizedBattery && retainedState.should_report_battery(*quantizedBattery);
 
     if (!shouldReportEnvironment && !shouldReportBattery && !retainedState.is_initial_startup()) {
-        ESP_LOGI(TAG, "No attribute changed. Skipping Zigbee wake-up for this cycle.");
-        schedule_next_wake_and_sleep();
+        ESP_LOGI(TAG, "No reportable attribute changed in this measurement cycle.");
+        return;
     }
 
     zigbee::PublishRequest publishRequest{};
@@ -185,13 +233,14 @@ void mainLoop() {
         publishRequest.battery = *quantizedBattery;
     }
 
-    zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
-    zigbee::ZDevice::get_instance()->init();
+    if constexpr (!USE_LIGHT_SLEEP) {
+        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
+        zigbee::ZDevice::get_instance()->init();
+    }
 
-    const auto joinTimeout = retainedState.is_initial_startup() ? INITIAL_JOIN_TIMEOUT : REJOIN_TIMEOUT;
-    if (!zigbee::ZDevice::get_instance()->wait_for_connection(joinTimeout)) {
-        ESP_LOGW(TAG, "Zigbee network is not available in this wake window.");
-        schedule_next_wake_and_sleep();
+    if (!ensure_zigbee_connection(retainedState)) {
+        ESP_LOGW(TAG, "Zigbee network is not available in this measurement cycle.");
+        return;
     }
 
     zigbee::ZDevice::get_instance()->publish(publishRequest);
@@ -204,8 +253,41 @@ void mainLoop() {
         retainedState.mark_battery_reported(*quantizedBattery);
     }
     retainedState.mark_startup_report_completed();
+}
+} // namespace
 
-    schedule_next_wake_and_sleep();
+void mainLoop() {
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+    // ESP-IDF's VFS layer emits very noisy verbose traces under the `vfs_calls` tag. Keep the global
+    // log level unchanged for firmware debugging, but silence that tag completely.
+    esp_log_level_set("vfs_calls", ESP_LOG_INFO);
+
+    ESP_LOGI(TAG, "Starting HASS environment sensor version %d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
+
+    init_nvs();
+    mark_running_partition_valid();
+    init_power_management();
+
+    std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener = devices::create_device_event_listener();
+    deviceListener->init();
+
+    app::RetainedState retainedState{};
+
+    if constexpr (USE_LIGHT_SLEEP) {
+        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
+        zigbee::ZDevice::get_instance()->init();
+    }
+
+    while (true) {
+        run_measurement_cycle(retainedState, deviceListener);
+
+        if constexpr (USE_LIGHT_SLEEP) {
+            wait_for_next_cycle_light_sleep();
+            retainedState.advance_wake_cycle();
+        } else {
+            schedule_next_wake_and_sleep();
+        }
+    }
 }
 
 extern "C" void app_main(void) {

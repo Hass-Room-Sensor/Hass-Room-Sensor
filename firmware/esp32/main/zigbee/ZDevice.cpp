@@ -74,6 +74,10 @@ void ZDevice::init() {
     initialized_ = true;
 }
 
+bool ZDevice::has_connection() const {
+    return eventGroup_ != nullptr && (xEventGroupGetBits(eventGroup_) & CONNECTED_BIT) != 0;
+}
+
 bool ZDevice::wait_for_connection(std::chrono::milliseconds timeout) const {
     const EventBits_t bits = xEventGroupWaitBits(eventGroup_, CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
     return (bits & CONNECTED_BIT) != 0;
@@ -182,8 +186,14 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ZDevice::get_instance()->basicClusterConfig.power_source = DEFAULT_POWER_SOURCE;
     }
 
-    // ESP deep sleep is used between measurements, so the Zigbee stack itself stays fully awake during the short publish session.
+    // In light-sleep mode the Zigbee stack remains joined and may request sleepy-end-device light
+    // sleep between polls. In deep-sleep mode the application tears the whole SoC down explicitly
+    // after each publish cycle.
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    esp_zb_sleep_enable(true);
+#else
     esp_zb_sleep_enable(false);
+#endif
 
     // ZigBee end device config:
     esp_zb_cfg_t networkConfig{};
@@ -505,6 +515,13 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
     }
 
     deviceState = newState;
+    if (eventGroup_) {
+        if (deviceState == ZigbeeDeviceState::CONNECTED) {
+            xEventGroupSetBits(eventGroup_, CONNECTED_BIT);
+        } else {
+            xEventGroupClearBits(eventGroup_, CONNECTED_BIT);
+        }
+    }
     if (deviceListener) {
         deviceListener->on_device_state_changed(deviceState);
     }
@@ -512,7 +529,6 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
 
 void ZDevice::on_connected() {
     set_device_state(ZigbeeDeviceState::CONNECTED);
-    xEventGroupSetBits(eventGroup_, CONNECTED_BIT);
 
     esp_zb_ieee_addr_t extendedPanId;
     esp_zb_get_extended_pan_id(extendedPanId);
@@ -567,6 +583,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t* signalStruct) {
 
         case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
             ESP_LOGD(zigbee::ZDevice::TAG, "Zigbee stack entered CAN_SLEEP during the current wake session.");
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+            esp_zb_sleep_now();
+#endif
             break;
 
         case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:

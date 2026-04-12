@@ -61,14 +61,22 @@ Datasheets and vendor references used by the firmware:
 
 ## Runtime Model
 
-The firmware follows a strict wake-measure-publish-sleep cycle:
+The firmware measures every 5 minutes and supports two Kconfig-selectable sleep strategies:
 
-1. The ESP wakes from deep sleep every 5 minutes.
+1. `Light sleep` is the default. The Zigbee sleepy end device stays joined to the network, the ESP
+   uses automatic light sleep between measurement cycles, and commands such as Home Assistant
+   `Identify` can reach the device while it is idle.
+2. `Deep sleep` fully powers the SoC down between cycles and reboots on every wake, which minimizes
+   idle power but makes the device unreachable while it sleeps.
+
+For both modes, each measurement cycle works like this:
+
+1. The ESP starts or resumes the current measurement cycle every 5 minutes.
 2. The BME690 is sampled in forced mode, which automatically returns the sensor to sleep after the conversion.
 3. The SCD41 is sampled in single-shot mode while the current pressure from the BME690 is injected as ambient pressure compensation.
-4. Environmental values are only published if the quantized Zigbee attribute changed since the last successful report.
+4. Temperature and humidity are published on every cycle. Pressure and CO2 are only published when the quantized Zigbee attribute changed since the last successful report.
 5. Battery values are only published on startup, when the battery percentage changes, and once every 24 hours.
-6. The Zigbee stack is started only for the short publish window and the ESP returns to deep sleep afterwards.
+6. The selected sleep strategy is entered until the next cycle.
 
 ## Home Assistant / ZHA Compatibility
 
@@ -117,6 +125,8 @@ cat > sdkconfig.device <<'EOF'
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n
+CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP=y
+CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_DEEP_SLEEP=n
 EOF
 
 # Ensure defaults are applied fresh (avoid reusing a previous sdkconfig)

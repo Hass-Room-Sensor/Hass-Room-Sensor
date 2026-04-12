@@ -61,6 +61,8 @@ class ZDevice {
 
     /** Starts the Zigbee stack if needed and prepares the wake-local session state. */
     void init();
+    /** Returns true when the Zigbee session is currently connected to a network. */
+    [[nodiscard]] bool has_connection() const;
     /** Waits until the device rejoins or forms a connection within the given timeout. */
     [[nodiscard]] bool wait_for_connection(std::chrono::milliseconds timeout) const;
     /** Publishes the requested attributes into the already joined Zigbee network. */
