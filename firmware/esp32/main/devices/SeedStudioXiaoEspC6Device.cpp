@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include <chrono>
 #include <cstdint>
+#include <esp_err.h>
 #include <esp_log.h>
 #include <optional>
 
@@ -12,6 +13,8 @@ namespace devices {
 SeedStudioXiaoEspC6Device::SeedStudioXiaoEspC6Device() : statusLed(HASS_SENSOR_STATUS_LED_GPIO, HASS_SENSOR_STATUS_LED_LOW_ACTIVE, HASS_SENSOR_STATUS_LED_MAX_BRIGHTNESS_PERCENT), redLed(HASS_SENSOR_RED_LED_GPIO, HASS_SENSOR_RED_LED_LOW_ACTIVE, HASS_SENSOR_RED_LED_MAX_BRIGHTNESS_PERCENT), greenLed(HASS_SENSOR_GREEN_LED_GPIO, HASS_SENSOR_GREEN_LED_LOW_ACTIVE, HASS_SENSOR_GREEN_LED_MAX_BRIGHTNESS_PERCENT) {}
 
 void SeedStudioXiaoEspC6Device::init() {
+    gpio_hold_dis(HASS_SENSOR_STATUS_LED_GPIO);
+
     statusLed.init();
     statusLed.set_off();
 
@@ -60,9 +63,31 @@ void SeedStudioXiaoEspC6Device::on_device_state_changed(zigbee::ZigbeeDeviceStat
 
 void SeedStudioXiaoEspC6Device::on_identify(uint16_t identifyTime) {
     if (identifyTime > 0) {
+        stop_identify_effect();
+        {
+            const std::scoped_lock lock(statusLedMutex_);
+            identifyActive_ = true;
+        }
         statusLed.set_blink(std::chrono::milliseconds(500), std::make_optional<size_t>(identifyTime * 2));
+        identifyRestoreWorker_ = std::jthread([this, identifyTime](std::stop_token stopToken) {
+            std::unique_lock lock(statusLedMutex_);
+            identifyCv_.wait_for(lock, stopToken, std::chrono::seconds{identifyTime}, [] { return false; });
+            if (stopToken.stop_requested()) {
+                return;
+            }
+            identifyActive_ = false;
+            const bool shouldShowSleepIndicator = sleepIndicatorActive_;
+            lock.unlock();
+
+            if (shouldShowSleepIndicator) {
+                statusLed.set_on();
+            } else {
+                statusLed.set_off();
+            }
+        });
     } else {
-        statusLed.set_off();
+        stop_identify_effect();
+        refresh_status_led();
     }
 }
 
@@ -76,8 +101,58 @@ bool SeedStudioXiaoEspC6Device::is_debug_led_enabled() const {
 
 void SeedStudioXiaoEspC6Device::set_debug_led(bool /*enabled*/) {}
 
+void SeedStudioXiaoEspC6Device::set_sleep_indicator(bool sleeping) {
+    {
+        const std::scoped_lock lock(statusLedMutex_);
+        sleepIndicatorActive_ = sleeping;
+    }
+    refresh_status_led();
+}
+
+void SeedStudioXiaoEspC6Device::prepare_for_deep_sleep() {
+    stop_identify_effect();
+    {
+        const std::scoped_lock lock(statusLedMutex_);
+        sleepIndicatorActive_ = true;
+        identifyActive_ = false;
+    }
+    statusLed.set_on();
+    ESP_ERROR_CHECK(gpio_hold_en(HASS_SENSOR_STATUS_LED_GPIO));
+}
+
 void SeedStudioXiaoEspC6Device::indicate_error() {
     redLed.set_on();
+}
+
+void SeedStudioXiaoEspC6Device::refresh_status_led() {
+    bool identifyActive = false;
+    bool sleepIndicatorActive = false;
+    {
+        const std::scoped_lock lock(statusLedMutex_);
+        identifyActive = identifyActive_;
+        sleepIndicatorActive = sleepIndicatorActive_;
+    }
+
+    if (identifyActive) {
+        return;
+    }
+
+    if (sleepIndicatorActive) {
+        statusLed.set_on();
+    } else {
+        statusLed.set_off();
+    }
+}
+
+void SeedStudioXiaoEspC6Device::stop_identify_effect() {
+    if (identifyRestoreWorker_.joinable()) {
+        identifyRestoreWorker_.request_stop();
+        identifyCv_.notify_all();
+        identifyRestoreWorker_ = std::jthread{};
+    }
+
+    const std::scoped_lock lock(statusLedMutex_);
+    identifyActive_ = false;
 }
 } // namespace devices
 

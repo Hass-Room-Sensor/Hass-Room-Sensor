@@ -4,7 +4,10 @@
 
 #include "actuators/Led.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 namespace devices {
@@ -33,10 +36,20 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     [[nodiscard]] bool has_debug_led() const override;
     [[nodiscard]] bool is_debug_led_enabled() const override;
     void set_debug_led(bool enabled) override;
+    void set_sleep_indicator(bool sleeping) override;
+    void prepare_for_deep_sleep() override;
     void indicate_error() override;
 
   private:
     void reset_state_leds();
+    void refresh_status_led();
+    void stop_identify_effect();
+
+    std::mutex statusLedMutex_{};
+    std::condition_variable_any identifyCv_{};
+    std::jthread identifyRestoreWorker_{};
+    bool sleepIndicatorActive_{false};
+    bool identifyActive_{false};
 };
 } // namespace devices
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6

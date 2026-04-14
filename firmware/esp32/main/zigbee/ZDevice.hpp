@@ -5,6 +5,9 @@
 #include "sensors/GpioInput.hpp"
 #include "zigbee/ZigbeeDeviceState.hpp"
 
+#ifdef CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
@@ -42,7 +45,8 @@ struct PublishRequest {
 /**
  * Zigbee end-device wrapper.
  *
- * The firmware boots, optionally rejoins the network, publishes the requested attributes and then returns to ESP deep sleep.
+ * The firmware boots, joins or rejoins the network, publishes the requested attributes and only
+ * then becomes eligible for ESP light sleep or deep sleep again.
  */
 class ZDevice {
   public:
@@ -69,6 +73,13 @@ class ZDevice {
     void publish(const PublishRequest& request);
     /** Registers the hardware-specific listener used for LEDs and identify effects. */
     void set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener);
+    /**
+     * Controls whether ESP light sleep is allowed while the Zigbee session is connected.
+     *
+     * This is used to keep the node fully awake during the initial Home Assistant interview after a
+     * fresh join and to re-enable light sleep once that commissioning window has finished.
+     */
+    void set_connected_light_sleep_allowed(bool allowed);
 
     /** Triggers a Zigbee factory reset. */
     void reset() const;
@@ -76,6 +87,8 @@ class ZDevice {
     void set_device_state(ZigbeeDeviceState newState);
     /** Marks the current session as connected and wakes any waiter. */
     void on_connected();
+    /** Dispatches top-level Zigbee app signals emitted by the stack. */
+    static void on_app_signal(esp_zb_app_signal_t* signal);
 
     /** Starts Zigbee BDB commissioning with the provided mode mask. */
     static void bdb_start_top_level_commissioning_cb(uint8_t modeMask);
@@ -185,8 +198,6 @@ class ZDevice {
     bool curDebugLed{true};
 
     // Battery.
-    /** Power configuration cluster backing storage. */
-    esp_zb_power_config_cluster_cfg_t powerCfg{};
     /** Power configuration cluster attribute list. */
     esp_zb_attribute_list_t* powerAttrList{nullptr};
     /** Current battery percentage in Zigbee half-percent steps. Unknown is 0xFF. */
@@ -195,6 +206,8 @@ class ZDevice {
     uint8_t curBatteryMv{37};
     /** Battery form factor. 0x1 means built-in battery. */
     uint8_t curBatterySize{0x1};
+    /** Number of physical cells represented by the primary battery attribute set. */
+    uint8_t curBatteryQuantity{0x1};
     /** Rated battery voltage in 100 mV units. */
     uint8_t curBatteryRatedVoltage{37};
     /** Rated battery capacity in 10 mAh units. */
@@ -213,6 +226,16 @@ class ZDevice {
     EventGroupHandle_t eventGroup_{nullptr};
     /** True once the Zigbee stack task has been created. */
     bool initialized_{false};
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    /** PM lock that prevents automatic ESP light sleep until the device is joined to Zigbee. */
+    esp_pm_lock_handle_t noLightSleepLock_{nullptr};
+    /** Tracks whether the PM lock is currently held. */
+    bool lightSleepBlocked_{false};
+#endif
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    /** True once the application allows light sleep for an already connected Zigbee session. */
+    bool connectedLightSleepAllowed_{false};
+#endif
 
     /** Small state bundle used while parsing OTA element frames. */
     struct OtaStatus {
@@ -228,6 +251,8 @@ class ZDevice {
     static void zb_main_task(void* arg);
     /** Top-level Zigbee action callback registered with the stack. */
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callbackId, const void* message);
+    /** Handles the Zigbee app-signal switchboard. */
+    void handle_app_signal(esp_zb_app_signal_t* signal);
     /** Handles attribute writes from Zigbee, such as identify or debug-light commands. */
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* message);
     /** Handles OTA state-machine updates from the Zigbee stack. */
@@ -253,6 +278,16 @@ class ZDevice {
     void setup_debug_led_cluster();
     /** Adds the battery/power configuration cluster to the main endpoint. */
     void setup_battery_cluster();
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    /** Creates and acquires the PM lock that keeps factory-new or disconnected nodes awake. */
+    void init_light_sleep_blocker();
+    /** Updates the PM lock according to the current Zigbee connectivity state. */
+    void sync_light_sleep_permission();
+#endif
+    /** Returns true when the device may currently enter Zigbee-controlled light sleep. */
+    [[nodiscard]] bool is_light_sleep_allowed_now() const;
+    /** Handles `CAN_SLEEP` by entering light sleep only when the application allows it. */
+    void handle_can_sleep_signal();
 
     /** Updates the in-memory Zigbee temperature attribute. */
     void update_temp(int16_t temperatureCentiCelsius);
@@ -273,5 +308,7 @@ class ZDevice {
     void set_version_details(const std::string& versionStr);
     /** Encodes a Zigbee character string and stores it into the Basic cluster. */
     void set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId);
+    /** Schedules BDB commissioning after a small delay. */
+    void schedule_commissioning(uint8_t modeMask) const;
 };
 } // namespace zigbee

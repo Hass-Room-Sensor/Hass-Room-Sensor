@@ -50,6 +50,12 @@ bool RetainedState::should_report_environment(const models::QuantizedEnvironment
         return true;
     }
 
+    // Temperature and humidity are refreshed every wake cycle so downstream consumers such as
+    // Home Assistant can observe a new sample even if the quantized value itself did not move.
+    if (readings.temperature_centi_celsius || readings.humidity_centi_percent) {
+        return true;
+    }
+
     if (readings.temperature_centi_celsius && (!storedState_->has_temperature || storedState_->temperature_centi_celsius != *readings.temperature_centi_celsius)) {
         return true;
     }
@@ -77,6 +83,10 @@ bool RetainedState::should_report_battery(const models::QuantizedBatteryReading&
         return true;
     }
     return (storedState_->wake_cycle - storedState_->last_battery_report_cycle) >= BATTERY_REPORT_INTERVAL_CYCLES;
+}
+
+void RetainedState::advance_wake_cycle() {
+    storedState_->wake_cycle += 1;
 }
 
 void RetainedState::mark_environment_reported(const models::QuantizedEnvironmentalReadings& readings) {

@@ -33,13 +33,20 @@ class RetainedState {
      */
     [[nodiscard]] bool is_initial_startup() const;
     /**
-     * Returns true when any quantized environmental attribute changed since the last successful publish.
+     * Returns true when the current wake cycle should publish environmental data.
+     *
+     * Temperature and humidity should be reported on every wake so Home Assistant receives a fresh
+     * sample timestamp even when the measurement backend is mocked or the values are stable.
      */
     [[nodiscard]] bool should_report_environment(const models::QuantizedEnvironmentalReadings& readings) const;
     /**
      * Returns true on initial startup, when the battery percentage changed, or once per day.
      */
     [[nodiscard]] bool should_report_battery(const models::QuantizedBatteryReading& reading) const;
+    /**
+     * Advances the retained wake-cycle counter for long-lived runtime modes such as light sleep.
+     */
+    void advance_wake_cycle();
 
     /**
      * Persists the last successfully published environmental values in RTC memory.

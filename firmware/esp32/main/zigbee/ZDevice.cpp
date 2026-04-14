@@ -5,6 +5,9 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#ifdef CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#endif
 #include "esp_system.h"
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
@@ -41,6 +44,12 @@ extern void zb_set_ed_node_descriptor(bool power_src, bool rx_on_when_idle, bool
 namespace zigbee {
 const char* ZDevice::TAG = "ZDevice";
 
+namespace {
+ZDevice& self() {
+    return *ZDevice::get_instance();
+}
+} // namespace
+
 void ZDevice::set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener) {
     deviceListener = std::move(listener);
 }
@@ -56,8 +65,11 @@ void ZDevice::init() {
         assert(eventGroup_ != nullptr);
     }
 
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    init_light_sleep_blocker();
+#endif
+
     if (initialized_) {
-        xEventGroupClearBits(eventGroup_, CONNECTED_BIT);
         return;
     }
 
@@ -81,6 +93,78 @@ bool ZDevice::has_connection() const {
 bool ZDevice::wait_for_connection(std::chrono::milliseconds timeout) const {
     const EventBits_t bits = xEventGroupWaitBits(eventGroup_, CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
     return (bits & CONNECTED_BIT) != 0;
+}
+
+void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    if (connectedLightSleepAllowed_ == allowed) {
+        return;
+    }
+
+    connectedLightSleepAllowed_ = allowed;
+#if defined(CONFIG_PM_ENABLE)
+    sync_light_sleep_permission();
+#endif
+#else
+    static_cast<void>(allowed);
+#endif
+}
+
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+void ZDevice::init_light_sleep_blocker() {
+    if (noLightSleepLock_ != nullptr) {
+        return;
+    }
+
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "zigbee_join", &noLightSleepLock_));
+    sync_light_sleep_permission();
+}
+
+void ZDevice::sync_light_sleep_permission() {
+    if (noLightSleepLock_ == nullptr) {
+        return;
+    }
+
+    const bool shouldBlockLightSleep = deviceState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed_;
+    if (shouldBlockLightSleep && !lightSleepBlocked_) {
+        ESP_ERROR_CHECK(esp_pm_lock_acquire(noLightSleepLock_));
+        lightSleepBlocked_ = true;
+        if (deviceState == ZigbeeDeviceState::CONNECTED) {
+            ESP_LOGI(TAG, "Blocking ESP light sleep while the initial Zigbee commissioning window is still active.");
+        } else {
+            ESP_LOGI(TAG, "Blocking ESP light sleep until the Zigbee network is joined.");
+        }
+    } else if (!shouldBlockLightSleep && lightSleepBlocked_) {
+        ESP_ERROR_CHECK(esp_pm_lock_release(noLightSleepLock_));
+        lightSleepBlocked_ = false;
+        ESP_LOGI(TAG, "Allowing ESP light sleep while the Zigbee session stays joined.");
+    }
+}
+#endif
+
+bool ZDevice::is_light_sleep_allowed_now() const {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    return has_connection() && connectedLightSleepAllowed_;
+#else
+    return false;
+#endif
+}
+
+void ZDevice::handle_can_sleep_signal() {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    if (!is_light_sleep_allowed_now()) {
+        ESP_LOGD(TAG, "Ignoring CAN_SLEEP while light sleep is still blocked by the application.");
+        return;
+    }
+
+    if (deviceListener) {
+        deviceListener->set_sleep_indicator(true);
+    }
+    esp_zb_sleep_now();
+    if (deviceListener) {
+        deviceListener->set_sleep_indicator(false);
+    }
+#endif
 }
 
 void ZDevice::publish(const PublishRequest& request) {
@@ -153,13 +237,7 @@ void ZDevice::update_co2(uint16_t co2Ppm) {
 
     // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
     curCo2 = static_cast<float_t>(static_cast<double>(co2Ppm) / 1000000.0);
-    const esp_err_t err = esp_zb_zcl_set_attribute_val(
-        DEFAULT_ENDPOINT_ID.endpoint,
-        ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
-        ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-        ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID,
-        static_cast<void*>(&curCo2),
-        false);
+    const esp_err_t err = esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to update CO2 attribute for %u ppm: %s.", co2Ppm, esp_err_to_name(err));
     }
@@ -179,11 +257,13 @@ void ZDevice::update_battery(const models::QuantizedBatteryReading& battery) {
 void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_LOGI(TAG, "Zigbee task started.");
 
-    const bool batteryPowered = ZDevice::get_instance()->powerSourceBattery.is_powered();
+    ZDevice& device = self();
+
+    const bool batteryPowered = device.powerSourceBattery.is_powered();
     if (batteryPowered) {
-        ZDevice::get_instance()->basicClusterConfig.power_source = 0x03;
+        device.basicClusterConfig.power_source = 0x03;
     } else {
-        ZDevice::get_instance()->basicClusterConfig.power_source = DEFAULT_POWER_SOURCE;
+        device.basicClusterConfig.power_source = DEFAULT_POWER_SOURCE;
     }
 
     // In light-sleep mode the Zigbee stack remains joined and may request sleepy-end-device light
@@ -204,25 +284,25 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     esp_zb_init(&networkConfig);
     ESP_LOGD(TAG, "esp_zb_init.");
 
-    esp_zb_cluster_list_t* clusterList = ZDevice::get_instance()->setup_temp_sensor();
-    ZDevice::get_instance()->setup_ota_cluster();
-    ZDevice::get_instance()->setup_hum_cluster();
-    ZDevice::get_instance()->setup_pressure_cluster();
-    ZDevice::get_instance()->setup_co2_cluster();
-    if (ZDevice::get_instance()->deviceListener && ZDevice::get_instance()->deviceListener->has_debug_led()) {
-        ZDevice::get_instance()->setup_debug_led_cluster();
+    esp_zb_cluster_list_t* clusterList = device.setup_temp_sensor();
+    device.setup_ota_cluster();
+    device.setup_hum_cluster();
+    device.setup_pressure_cluster();
+    device.setup_co2_cluster();
+    if (device.deviceListener && device.deviceListener->has_debug_led()) {
+        device.setup_debug_led_cluster();
     }
-    ZDevice::get_instance()->setup_battery_cluster();
+    device.setup_battery_cluster();
     ESP_LOGD(TAG, "setup_battery_cluster.");
 
     std::array<char, 32> version{};
     snprintf(version.data(), version.size(), "%d.%d.%d", CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MAJOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_MINOR, CONFIG_HASS_ENVIRONMENT_SENSOR_VERSION_PATCH);
-    ZDevice::get_instance()->setup_basic_cluster("HASS Env Sensor", "DOOP", std::string{version.data()});
+    device.setup_basic_cluster("HASS Env Sensor", "DOOP", std::string{version.data()});
 
     esp_zb_ep_list_t* endpointList = esp_zb_ep_list_create();
     ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, clusterList, DEFAULT_ENDPOINT_ID));
-    if (ZDevice::get_instance()->debugLedClusterList) {
-        ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, ZDevice::get_instance()->debugLedClusterList, LIGHT_ON_OFF_ENDPOINT_ID));
+    if (device.debugLedClusterList) {
+        ESP_ERROR_CHECK(esp_zb_ep_list_add_ep(endpointList, device.debugLedClusterList, LIGHT_ON_OFF_ENDPOINT_ID));
     }
 
     ESP_ERROR_CHECK(esp_zb_device_register(endpointList));
@@ -247,8 +327,8 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         ESP_LOGI(TAG, "Applied battery-powered end-device node descriptor workaround for ZHA.");
     }
 
-    if (ZDevice::get_instance()->resetGpio.is_powered()) {
-        ZDevice::get_instance()->reset();
+    if (device.resetGpio.is_powered()) {
+        device.reset();
     }
 
     ESP_LOGD(TAG, "esp_zb_stack_main_loop.");
@@ -399,6 +479,10 @@ void ZDevice::bdb_start_top_level_commissioning_cb(uint8_t modeMask) {
     ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(modeMask));
 }
 
+void ZDevice::schedule_commissioning(uint8_t modeMask) const {
+    esp_zb_scheduler_alarm(ZDevice::bdb_start_top_level_commissioning_cb, modeMask, 1000);
+}
+
 esp_zb_cluster_list_t* ZDevice::setup_temp_sensor() {
     assert(!clusterList);
     assert(!tempAttrList);
@@ -496,16 +580,22 @@ void ZDevice::setup_battery_cluster() {
     assert(!powerAttrList);
     assert(clusterList);
 
-    powerCfg.main_voltage = 37;     // 3.7V battery in 100 mV steps
-    powerCfg.main_voltage_max = 55; // 5.5V battery in 100 mV steps
-    powerCfg.main_voltage_min = 32; // 3.2V battery in 100 mV steps
+    powerAttrList = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG);
+    assert(powerAttrList);
 
-    powerAttrList = esp_zb_power_config_cluster_create(&powerCfg);
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &curBatteryPercentage));
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, &curBatteryMv));
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, &curBatterySize));
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, &curBatteryMAhRating));
-    ESP_ERROR_CHECK(esp_zb_power_config_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, &curBatteryRatedVoltage));
+    constexpr uint8_t REPORTABLE_READ_ONLY = ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING;
+    constexpr uint8_t READ_ONLY = ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY;
+
+    // ZHA's "Reconfigure" action configures reporting for battery voltage and percentage. Espressif's
+    // generic power-config helper exposes the values but does not make battery voltage reportable for
+    // this device profile, which causes ZCL status 0x8c (UNREPORTABLE_ATTRIBUTE). Build the cluster
+    // explicitly so both runtime battery attributes advertise reporting support.
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, REPORTABLE_READ_ONLY, &curBatteryMv));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, REPORTABLE_READ_ONLY, &curBatteryPercentage));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, READ_ONLY, &curBatterySize));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_QUANTITY_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, READ_ONLY, &curBatteryQuantity));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, ESP_ZB_ZCL_ATTR_TYPE_U16, READ_ONLY, &curBatteryMAhRating));
+    ESP_ERROR_CHECK(esp_zb_cluster_add_attr(powerAttrList, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, READ_ONLY, &curBatteryRatedVoltage));
     ESP_ERROR_CHECK(esp_zb_cluster_list_add_power_config_cluster(clusterList, powerAttrList, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE));
 }
 
@@ -515,6 +605,9 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
     }
 
     deviceState = newState;
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    sync_light_sleep_permission();
+#endif
     if (eventGroup_) {
         if (deviceState == ZigbeeDeviceState::CONNECTED) {
             xEventGroupSetBits(eventGroup_, CONNECTED_BIT);
@@ -534,101 +627,104 @@ void ZDevice::on_connected() {
     esp_zb_get_extended_pan_id(extendedPanId);
     ESP_LOGI(TAG, "Connected (PAN ID 0x%04hx, channel %d).", esp_zb_get_pan_id(), esp_zb_get_current_channel());
 }
-} // namespace zigbee
 
-void esp_zb_app_signal_handler(esp_zb_app_signal_t* signalStruct) {
+void ZDevice::on_app_signal(esp_zb_app_signal_t* signal) {
+    self().handle_app_signal(signal);
+}
+
+void ZDevice::handle_app_signal(esp_zb_app_signal_t* signalStruct) {
     const esp_err_t errorStatus = signalStruct->esp_err_status;
     const auto signalType = static_cast<esp_zb_app_signal_type_t>(*signalStruct->p_app_signal);
 
     switch (signalType) {
         case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
-            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-            ESP_LOGI(zigbee::ZDevice::TAG, "Zigbee stack initialized after startup skipped");
-            esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
+            set_device_state(ZigbeeDeviceState::CONNECTING);
+            ESP_LOGI(TAG, "Zigbee stack initialized after startup skipped");
+            schedule_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
             break;
 
         case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
         case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (errorStatus == ESP_OK) {
-                ESP_LOGI(zigbee::ZDevice::TAG, "Device state: %s", esp_zb_bdb_is_factory_new() ? "factory new" : "configured");
+                ESP_LOGI(TAG, "Device state: %s", esp_zb_bdb_is_factory_new() ? "factory new" : "configured");
                 if (esp_zb_bdb_is_factory_new()) {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::SETUP);
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices...");
-                    esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
+                    set_device_state(ZigbeeDeviceState::SETUP);
+                    ESP_LOGI(TAG, "Scanning for available Zigbee networks and joining one that's open to new devices...");
+                    schedule_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
                 } else {
-                    zigbee::ZDevice::get_instance()->on_connected();
+                    on_connected();
                 }
             } else {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-                ESP_LOGW(zigbee::ZDevice::TAG, "Failed to initialize Zigbee stack (status: %s).", esp_err_to_name(errorStatus));
-                ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
-                esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_INITIALIZATION, 1000);
+                set_device_state(ZigbeeDeviceState::CONNECTING);
+                ESP_LOGW(TAG, "Failed to initialize Zigbee stack (status: %s).", esp_err_to_name(errorStatus));
+                ESP_LOGI(TAG, "Scanning for available Zigbee networks and joining one that's open to new devices....");
+                schedule_commissioning(ESP_ZB_BDB_MODE_INITIALIZATION);
             }
             break;
 
         case ESP_ZB_BDB_SIGNAL_STEERING:
             if (errorStatus == ESP_OK) {
-                zigbee::ZDevice::get_instance()->on_connected();
+                on_connected();
             } else {
                 if (esp_zb_bdb_is_factory_new()) {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::SETUP);
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Scanning for available networks to join was not successful (status: %s). Attempting to join again...", esp_err_to_name(errorStatus));
+                    set_device_state(ZigbeeDeviceState::SETUP);
+                    ESP_LOGI(TAG, "Scanning for available networks to join was not successful (status: %s). Attempting to join again...", esp_err_to_name(errorStatus));
                 } else {
-                    zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-                    ESP_LOGI(zigbee::ZDevice::TAG, "Rejoining a known network was not successful (status: %s). Attempting to join again...", esp_err_to_name(errorStatus));
+                    set_device_state(ZigbeeDeviceState::CONNECTING);
+                    ESP_LOGI(TAG, "Rejoining a known network was not successful (status: %s). Attempting to join again...", esp_err_to_name(errorStatus));
                 }
-                esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
+                schedule_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
             }
             break;
 
         case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
-            ESP_LOGD(zigbee::ZDevice::TAG, "Zigbee stack entered CAN_SLEEP during the current wake session.");
-#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
-            esp_zb_sleep_now();
-#endif
+            ESP_LOGD(TAG, "Zigbee stack entered CAN_SLEEP during the current wake session.");
+            handle_can_sleep_signal();
             break;
 
         case ESP_ZB_ZDO_DEVICE_UNAVAILABLE:
-            zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-            ESP_LOGI(zigbee::ZDevice::TAG, "ZigBee device unavailable (status: %s). Trying to rejoin...", esp_err_to_name(errorStatus));
-            esp_zb_scheduler_alarm(zigbee::ZDevice::bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
+            set_device_state(ZigbeeDeviceState::CONNECTING);
+            ESP_LOGI(TAG, "ZigBee device unavailable (status: %s). Trying to rejoin...", esp_err_to_name(errorStatus));
+            schedule_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
             break;
 
         case ESP_ZB_BDB_SIGNAL_TC_REJOIN_DONE:
             if (errorStatus == ESP_OK) {
-                zigbee::ZDevice::get_instance()->on_connected();
-                ESP_LOGI(zigbee::ZDevice::TAG, "TC rejoin completed.");
+                on_connected();
+                ESP_LOGI(TAG, "TC rejoin completed.");
             } else {
-                ESP_LOGW(zigbee::ZDevice::TAG, "TC rejoin failed: %s", esp_err_to_name(errorStatus));
+                ESP_LOGW(TAG, "TC rejoin failed: %s", esp_err_to_name(errorStatus));
             }
             break;
 
         case ESP_ZB_ZDO_SIGNAL_PRODUCTION_CONFIG_READY:
-            // Espressif emits this during normal startup even when no production config blob is present.
-            // Treat it as informational instead of warning noise and still set the manufacturer code so
-            // the node descriptor remains stable for interview/debugging purposes.
-            ESP_LOGI(zigbee::ZDevice::TAG, "Production configuration is %s.", errorStatus == ESP_OK ? "ready" : "not present");
+            ESP_LOGI(TAG, "Production configuration is %s.", errorStatus == ESP_OK ? "ready" : "not present");
             esp_zb_set_node_descriptor_manufacturer_code(CONFIG_HASS_ENVIRONMENT_SENSOR_OTA_MANUFACTURER);
             break;
 
         case ESP_ZB_ZDO_SIGNAL_LEAVE: {
             const auto* leaveParams = static_cast<esp_zb_zdo_signal_leave_params_t*>(esp_zb_app_signal_get_params(signalStruct->p_app_signal));
             if (leaveParams && leaveParams->leave_type == ESP_ZB_NWK_LEAVE_TYPE_RESET) {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::SETUP);
-                ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with device reset request and error status '%s' received.", esp_err_to_name(errorStatus));
+                set_device_state(ZigbeeDeviceState::SETUP);
+                ESP_LOGW(TAG, "ZigBee leave signal with device reset request and error status '%s' received.", esp_err_to_name(errorStatus));
                 esp_zb_factory_reset();
             } else {
-                zigbee::ZDevice::get_instance()->set_device_state(zigbee::ZigbeeDeviceState::CONNECTING);
-                ESP_LOGW(zigbee::ZDevice::TAG, "ZigBee leave signal with error status '%s' received.", esp_err_to_name(errorStatus));
+                set_device_state(ZigbeeDeviceState::CONNECTING);
+                ESP_LOGW(TAG, "ZigBee leave signal with error status '%s' received.", esp_err_to_name(errorStatus));
             }
         } break;
 
         case ESP_ZB_NLME_STATUS_INDICATION:
-            ESP_LOGI(zigbee::ZDevice::TAG, "%s NLME status '0x%x' with error status: %s", esp_zb_zdo_signal_to_string(static_cast<esp_zb_app_signal_type_t>(*signalStruct->p_app_signal)), *static_cast<uint8_t*>(esp_zb_app_signal_get_params(signalStruct->p_app_signal)), esp_err_to_name(errorStatus));
+            ESP_LOGI(TAG, "%s NLME status '0x%x' with error status: %s", esp_zb_zdo_signal_to_string(signalType), *static_cast<uint8_t*>(esp_zb_app_signal_get_params(signalStruct->p_app_signal)), esp_err_to_name(errorStatus));
             break;
 
         default:
-            ESP_LOGW(zigbee::ZDevice::TAG, "Unhandled ZDO signal %s (status: %s).", esp_zb_zdo_signal_to_string(signalType), esp_err_to_name(errorStatus));
+            ESP_LOGW(TAG, "Unhandled ZDO signal %s (status: %s).", esp_zb_zdo_signal_to_string(signalType), esp_err_to_name(errorStatus));
             break;
     }
+}
+} // namespace zigbee
+
+void esp_zb_app_signal_handler(esp_zb_app_signal_t* signalStruct) {
+    zigbee::ZDevice::on_app_signal(signalStruct);
 }

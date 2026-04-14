@@ -43,6 +43,9 @@ constexpr bool USE_LIGHT_SLEEP =
 // Give the Zigbee stack a short moment to flush attribute updates before the firmware either deep
 // sleeps or resumes its long-lived light-sleep idle period.
 constexpr std::chrono::seconds SESSION_SETTLE_TIME{2};
+// Keep the device fully awake after the first successful join so Home Assistant can complete the
+// initial interview before the sleepy end device starts using automatic ESP light sleep again.
+constexpr std::chrono::minutes INITIAL_INTERVIEW_AWAKE_TIME{2};
 // First boot may need a much longer join window than normal wake-up reports.
 constexpr std::chrono::minutes INITIAL_JOIN_TIMEOUT{5};
 constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
@@ -158,7 +161,10 @@ void init_power_management() {
 /**
  * Returns the joined Zigbee session to deep sleep until the next measurement interval.
  */
-[[noreturn]] void schedule_next_wake_and_sleep() {
+[[noreturn]] void schedule_next_wake_and_sleep(const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
+    if (deviceListener) {
+        deviceListener->prepare_for_deep_sleep();
+    }
     ESP_LOGI(TAG, "Entering deep sleep for %lld seconds.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(std::chrono::duration_cast<std::chrono::microseconds>(app::RetainedState::WAKE_INTERVAL).count()));
     esp_deep_sleep_start();
@@ -175,6 +181,32 @@ void wait_for_next_cycle_light_sleep() {
     const auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(app::RetainedState::WAKE_INTERVAL);
     ESP_LOGI(TAG, "Waiting %lld seconds before the next measurement cycle while Zigbee stays joined.", std::chrono::duration_cast<std::chrono::seconds>(delay).count());
     vTaskDelay(pdMS_TO_TICKS(delay.count()));
+}
+
+/**
+ * Holds the device awake long enough for the first Home Assistant interview to finish.
+ */
+void keep_awake_for_initial_interview() {
+    ESP_LOGI(TAG, "Keeping the device awake for %lld seconds so the initial Home Assistant interview can complete.", std::chrono::duration_cast<std::chrono::seconds>(INITIAL_INTERVIEW_AWAKE_TIME).count());
+    std::this_thread::sleep_for(INITIAL_INTERVIEW_AWAKE_TIME);
+}
+
+/**
+ * Keeps the application awake until Zigbee finishes joining or rejoining a network.
+ *
+ * The Zigbee stack already retries commissioning internally. This helper only prevents the main
+ * application from entering its normal timed sleep path while the device is still factory new or
+ * otherwise disconnected from the mesh.
+ */
+void wait_until_connected_awake() {
+    constexpr std::chrono::seconds LOG_INTERVAL{30};
+    ESP_LOGW(TAG, "Zigbee is not connected. Sleep is disabled until the device joins a network.");
+    while (!zigbee::ZDevice::get_instance()->has_connection()) {
+        if (zigbee::ZDevice::get_instance()->wait_for_connection(LOG_INTERVAL)) {
+            return;
+        }
+        ESP_LOGI(TAG, "Still waiting for a Zigbee connection before entering the configured sleep mode.");
+    }
 }
 
 /**
@@ -252,6 +284,13 @@ void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_
     if (shouldReportBattery && quantizedBattery) {
         retainedState.mark_battery_reported(*quantizedBattery);
     }
+
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    if (retainedState.is_initial_startup()) {
+        keep_awake_for_initial_interview();
+        zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(true);
+    }
+#endif
     retainedState.mark_startup_report_completed();
 }
 } // namespace
@@ -275,17 +314,23 @@ void mainLoop() {
 
     if constexpr (USE_LIGHT_SLEEP) {
         zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
+        zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(!retainedState.is_initial_startup());
         zigbee::ZDevice::get_instance()->init();
     }
 
     while (true) {
         run_measurement_cycle(retainedState, deviceListener);
 
+        if (!zigbee::ZDevice::get_instance()->has_connection()) {
+            wait_until_connected_awake();
+            continue;
+        }
+
         if constexpr (USE_LIGHT_SLEEP) {
             wait_for_next_cycle_light_sleep();
             retainedState.advance_wake_cycle();
         } else {
-            schedule_next_wake_and_sleep();
+            schedule_next_wake_and_sleep(deviceListener);
         }
     }
 }
