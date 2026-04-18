@@ -59,7 +59,7 @@ jobs:
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.1
+          esp_idf_version: v6.0
           target: ${{ steps.set_target.outputs.espIdf_target }}
           path: firmware/esp32
           command: idf.py build
