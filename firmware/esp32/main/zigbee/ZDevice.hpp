@@ -217,7 +217,7 @@ class ZDevice {
     // listening for Zigbee state changes and identify effects.
     std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener{nullptr};
     /** Reset GPIO used for factory-resetting the Zigbee stack. */
-    sensors::GpioInput resetGpio{GPIO_NUM_1};
+    sensors::GpioInput resetGpio{GPIO_NUM_16};
     /** Input that selects whether the device should advertise itself as battery powered. */
     sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
     /** Current high-level Zigbee state used by the hardware listener. */

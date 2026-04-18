@@ -35,11 +35,11 @@ void SeedStudioXiaoEspC6Device::init() {
 
     if (identifyRestoreTimer_ == nullptr) {
         const esp_timer_create_args_t identifyRestoreTimerArgs{
-            .callback = &SeedStudioXiaoEspC6Device::on_identify_restore_timer,
-            .arg = this,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "xiao_identify",
-            .skip_unhandled_events = true,
+                .callback = &SeedStudioXiaoEspC6Device::on_identify_restore_timer,
+                .arg = this,
+                .dispatch_method = ESP_TIMER_TASK,
+                .name = "xiao_identify",
+                .skip_unhandled_events = true,
         };
         ESP_ERROR_CHECK(esp_timer_create(&identifyRestoreTimerArgs, &identifyRestoreTimer_));
     }
