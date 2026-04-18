@@ -339,6 +339,8 @@ esp_err_t ZDevice::on_zb_action(esp_zb_core_action_callback_id_t callbackId, con
     switch (callbackId) {
         case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
             return ZDevice::on_attr_changed(static_cast<const esp_zb_zcl_set_attr_value_message_t*>(message));
+        case ESP_ZB_CORE_CMD_DEFAULT_RESP_CB_ID:
+            return ZDevice::on_default_response(static_cast<const esp_zb_zcl_cmd_default_resp_message_t*>(message));
         case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
             return on_ota_upgrade_status(static_cast<const esp_zb_zcl_ota_upgrade_value_message_t*>(message));
         case ESP_ZB_CORE_OTA_UPGRADE_QUERY_IMAGE_RESP_CB_ID:
@@ -370,6 +372,20 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* me
         }
     }
 
+    return ESP_OK;
+}
+
+esp_err_t ZDevice::on_default_response(const esp_zb_zcl_cmd_default_resp_message_t* message) {
+    if (!message) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (message->status_code == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        ESP_LOGD(TAG, "Default Zigbee response acknowledged command 0x%x on cluster 0x%04x from endpoint %u.", message->resp_to_cmd, message->info.cluster, message->info.src_endpoint);
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "Zigbee default response for command 0x%x on cluster 0x%04x returned status 0x%02x (src ep %u -> dst ep %u).", message->resp_to_cmd, message->info.cluster, message->status_code, message->info.src_endpoint, message->info.dst_endpoint);
     return ESP_OK;
 }
 

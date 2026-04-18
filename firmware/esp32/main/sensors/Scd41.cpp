@@ -62,6 +62,7 @@ bool Scd41::init() const {
 
     if (!probe_device()) {
         ESP_LOGE(TAG, "Probing failed!");
+        initialized = false;
         return false;
     }
     ESP_LOGI(TAG, "Probing was successful!");
@@ -75,11 +76,14 @@ bool Scd41::init() const {
     ESP_LOGI(TAG, "SCD41 temperature offset: %f", get_temperature_offset());
 
     ESP_LOGI(TAG, "Setup and ready to use in idle single-shot mode.");
+    initialized = true;
     return true;
 }
 
 Scd41::~Scd41() {
-    (void) stop_periodic_measurement();
+    if (initialized) {
+        (void) stop_periodic_measurement();
+    }
 
     // Cleanup I2C devices
     ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev));

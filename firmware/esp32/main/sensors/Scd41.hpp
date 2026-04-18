@@ -44,6 +44,8 @@ class Scd41 : public AbstractScd41 {
 
     /** Scratch buffer reused for short command payloads. */
     std::array<uint8_t, 2> buffer;
+    /** True once the sensor answered its probe and completed initialization. */
+    mutable bool initialized{false};
 
   public:
     /** Creates the SCD41 wrapper on the given I2C pins. */

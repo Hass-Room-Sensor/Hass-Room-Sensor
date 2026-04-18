@@ -257,6 +257,8 @@ class ZDevice {
     static esp_err_t on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* message);
     /** Handles OTA state-machine updates from the Zigbee stack. */
     static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message);
+    /** Handles generic ZCL default responses emitted by the Zigbee stack. */
+    static esp_err_t on_default_response(const esp_zb_zcl_cmd_default_resp_message_t* message);
     /** Strips the OTA element header and validates the payload framing used by Espressif's OTA path. */
     esp_err_t on_ota_upgrade_data_message(uint32_t totalSize, void* payload, uint16_t payloadSize, void** outBuffer, uint16_t* outLength);
     /** Handles the OTA query-image response event from the server. */

@@ -1,9 +1,9 @@
 #pragma once
 
+#include "bme69x.h"
 #include "driver/i2c_master.h"
 #include "sensors/AbstractBme690.hpp"
 #include "soc/gpio_num.h"
-#include "bme69x.h"
 
 #include <chrono>
 
