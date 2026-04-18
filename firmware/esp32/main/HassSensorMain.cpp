@@ -197,6 +197,7 @@ void wait_for_next_cycle_light_sleep() {
     free_rtos_sleep(app::RetainedState::WAKE_INTERVAL);
 }
 
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
 /**
  * Holds the device awake long enough for the first Home Assistant interview to finish.
  */
@@ -204,6 +205,7 @@ void keep_awake_for_initial_interview() {
     ESP_LOGI(TAG, "Keeping the device awake for %lld seconds so the initial Home Assistant interview can complete.", std::chrono::duration_cast<std::chrono::seconds>(INITIAL_INTERVIEW_AWAKE_TIME).count());
     free_rtos_sleep(INITIAL_INTERVIEW_AWAKE_TIME);
 }
+#endif
 
 /**
  * Keeps the application awake until Zigbee finishes joining or rejoining a network.
