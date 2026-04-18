@@ -1,7 +1,5 @@
 #pragma once
 
-#include "defs/DeviceDefs.hpp"
-
 #include "actuators/Led.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
 #include "esp_timer.h"
@@ -20,6 +18,11 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     actuators::Led statusLed;
     actuators::Led redLed;
     actuators::Led greenLed;
+
+    std::mutex statusLedMutex{};
+    esp_timer_handle_t identifyRestoreTimer{nullptr};
+    bool sleepIndicatorActive{false};
+    bool identifyActive{false};
 
   public:
     SeedStudioXiaoEspC6Device();
@@ -41,14 +44,9 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
 
   private:
     void reset_state_leds();
-    void refresh_status_led();
     void stop_identify_effect();
+    void refresh_status_led();
     static void on_identify_restore_timer(void* arg);
-
-    std::mutex statusLedMutex_{};
-    esp_timer_handle_t identifyRestoreTimer_{nullptr};
-    bool sleepIndicatorActive_{false};
-    bool identifyActive_{false};
 };
 } // namespace devices
 #endif // CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
