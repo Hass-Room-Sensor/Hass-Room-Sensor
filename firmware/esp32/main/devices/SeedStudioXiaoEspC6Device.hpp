@@ -4,10 +4,9 @@
 
 #include "actuators/Led.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
-#include <condition_variable>
+#include "esp_timer.h"
 #include <memory>
 #include <mutex>
-#include <thread>
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 namespace devices {
@@ -28,7 +27,7 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     SeedStudioXiaoEspC6Device(const SeedStudioXiaoEspC6Device&) = default;
     SeedStudioXiaoEspC6Device& operator=(SeedStudioXiaoEspC6Device&&) = default;
     SeedStudioXiaoEspC6Device& operator=(const SeedStudioXiaoEspC6Device&) = default;
-    ~SeedStudioXiaoEspC6Device() override = default;
+    ~SeedStudioXiaoEspC6Device() override;
 
     void init() override;
     void on_device_state_changed(zigbee::ZigbeeDeviceState state) override;
@@ -44,10 +43,10 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     void reset_state_leds();
     void refresh_status_led();
     void stop_identify_effect();
+    static void on_identify_restore_timer(void* arg);
 
     std::mutex statusLedMutex_{};
-    std::condition_variable_any identifyCv_{};
-    std::jthread identifyRestoreWorker_{};
+    esp_timer_handle_t identifyRestoreTimer_{nullptr};
     bool sleepIndicatorActive_{false};
     bool identifyActive_{false};
 };

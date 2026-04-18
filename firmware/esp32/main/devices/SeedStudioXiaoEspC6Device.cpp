@@ -1,6 +1,7 @@
 #include "devices/SeedStudioXiaoEspC6Device.hpp"
 #include "defs/DeviceDefs.hpp"
 #include "driver/gpio.h"
+#include "esp_timer.h"
 #include <chrono>
 #include <cstdint>
 #include <esp_err.h>
@@ -11,6 +12,14 @@
 
 namespace devices {
 SeedStudioXiaoEspC6Device::SeedStudioXiaoEspC6Device() : statusLed(HASS_SENSOR_STATUS_LED_GPIO, HASS_SENSOR_STATUS_LED_LOW_ACTIVE, HASS_SENSOR_STATUS_LED_MAX_BRIGHTNESS_PERCENT), redLed(HASS_SENSOR_RED_LED_GPIO, HASS_SENSOR_RED_LED_LOW_ACTIVE, HASS_SENSOR_RED_LED_MAX_BRIGHTNESS_PERCENT), greenLed(HASS_SENSOR_GREEN_LED_GPIO, HASS_SENSOR_GREEN_LED_LOW_ACTIVE, HASS_SENSOR_GREEN_LED_MAX_BRIGHTNESS_PERCENT) {}
+
+SeedStudioXiaoEspC6Device::~SeedStudioXiaoEspC6Device() {
+    stop_identify_effect();
+    if (identifyRestoreTimer_ != nullptr) {
+        ESP_ERROR_CHECK(esp_timer_delete(identifyRestoreTimer_));
+        identifyRestoreTimer_ = nullptr;
+    }
+}
 
 void SeedStudioXiaoEspC6Device::init() {
     gpio_hold_dis(HASS_SENSOR_STATUS_LED_GPIO);
@@ -23,6 +32,17 @@ void SeedStudioXiaoEspC6Device::init() {
 
     greenLed.init();
     greenLed.set_off();
+
+    if (identifyRestoreTimer_ == nullptr) {
+        const esp_timer_create_args_t identifyRestoreTimerArgs{
+            .callback = &SeedStudioXiaoEspC6Device::on_identify_restore_timer,
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "xiao_identify",
+            .skip_unhandled_events = true,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&identifyRestoreTimerArgs, &identifyRestoreTimer_));
+    }
 
     // Enable the RF Switch
     gpio_reset_pin(gpio_num_t::GPIO_NUM_3);
@@ -69,22 +89,9 @@ void SeedStudioXiaoEspC6Device::on_identify(uint16_t identifyTime) {
             identifyActive_ = true;
         }
         statusLed.set_blink(std::chrono::milliseconds(500), std::make_optional<size_t>(identifyTime * 2));
-        identifyRestoreWorker_ = std::jthread([this, identifyTime](std::stop_token stopToken) {
-            std::unique_lock lock(statusLedMutex_);
-            identifyCv_.wait_for(lock, stopToken, std::chrono::seconds{identifyTime}, [] { return false; });
-            if (stopToken.stop_requested()) {
-                return;
-            }
-            identifyActive_ = false;
-            const bool shouldShowSleepIndicator = sleepIndicatorActive_;
-            lock.unlock();
-
-            if (shouldShowSleepIndicator) {
-                statusLed.set_on();
-            } else {
-                statusLed.set_off();
-            }
-        });
+        if (identifyRestoreTimer_ != nullptr) {
+            ESP_ERROR_CHECK(esp_timer_start_once(identifyRestoreTimer_, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::seconds{identifyTime}).count()));
+        }
     } else {
         stop_identify_effect();
         refresh_status_led();
@@ -145,14 +152,28 @@ void SeedStudioXiaoEspC6Device::refresh_status_led() {
 }
 
 void SeedStudioXiaoEspC6Device::stop_identify_effect() {
-    if (identifyRestoreWorker_.joinable()) {
-        identifyRestoreWorker_.request_stop();
-        identifyCv_.notify_all();
-        identifyRestoreWorker_ = std::jthread{};
+    if (identifyRestoreTimer_ != nullptr) {
+        const esp_err_t stopResult = esp_timer_stop(identifyRestoreTimer_);
+        if (stopResult != ESP_OK && stopResult != ESP_ERR_INVALID_STATE) {
+            ESP_ERROR_CHECK(stopResult);
+        }
     }
 
     const std::scoped_lock lock(statusLedMutex_);
     identifyActive_ = false;
+}
+
+void SeedStudioXiaoEspC6Device::on_identify_restore_timer(void* arg) {
+    auto* device = static_cast<SeedStudioXiaoEspC6Device*>(arg);
+    if (device == nullptr) {
+        return;
+    }
+
+    {
+        const std::scoped_lock lock(device->statusLedMutex_);
+        device->identifyActive_ = false;
+    }
+    device->refresh_status_led();
 }
 } // namespace devices
 
