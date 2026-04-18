@@ -136,8 +136,8 @@ void SeedStudioXiaoEspC6Device::refresh_status_led() {
     bool sleepIndicatorActive = false;
     {
         const std::scoped_lock lock(statusLedMutex);
-        identifyActive = identifyActive;
-        sleepIndicatorActive = sleepIndicatorActive;
+        identifyActive = this->identifyActive;
+        sleepIndicatorActive = this->sleepIndicatorActive;
     }
 
     if (identifyActive) {

@@ -158,10 +158,12 @@ void ZDevice::handle_can_sleep_signal() {
     }
 
     if (deviceListener) {
+        ESP_LOGI(TAG, "Sleeping....");
         deviceListener->set_sleep_indicator(true);
     }
     esp_zb_sleep_now();
     if (deviceListener) {
+        ESP_LOGI(TAG, "Woke up");
         deviceListener->set_sleep_indicator(false);
     }
 #endif
@@ -280,7 +282,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     networkConfig.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
     networkConfig.install_code_policy = false;
     networkConfig.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
-    networkConfig.nwk_cfg.zed_cfg.keep_alive = std::chrono::seconds(3).count();
+    networkConfig.nwk_cfg.zed_cfg.keep_alive = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(5)).count(); // Wake up from sleep every 5 seconds to send a keep alive via ZigBee
     esp_zb_init(&networkConfig);
     ESP_LOGD(TAG, "esp_zb_init.");
 

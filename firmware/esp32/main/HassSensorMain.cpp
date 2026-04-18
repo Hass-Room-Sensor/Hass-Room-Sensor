@@ -36,16 +36,16 @@ namespace {
 const char* TAG = "hassSensor";
 constexpr bool USE_LIGHT_SLEEP =
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
-    true;
+        true;
 #else
-    false;
+        false;
 #endif
 // Give the Zigbee stack a short moment to flush attribute updates before the firmware either deep
 // sleeps or resumes its long-lived light-sleep idle period.
 constexpr std::chrono::seconds SESSION_SETTLE_TIME{2};
 // Keep the device fully awake after the first successful join so Home Assistant can complete the
 // initial interview before the sleepy end device starts using automatic ESP light sleep again.
-constexpr std::chrono::minutes INITIAL_INTERVIEW_AWAKE_TIME{2};
+constexpr std::chrono::minutes INITIAL_INTERVIEW_AWAKE_TIME{1};
 // First boot may need a much longer join window than normal wake-up reports.
 constexpr std::chrono::minutes INITIAL_JOIN_TIMEOUT{5};
 constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
@@ -174,13 +174,27 @@ void init_power_management() {
 }
 
 /**
+ * Suspends the current FreeRTOS task for the requested duration.
+ *
+ * Uses `vTaskDelay()` instead of `std::this_thread::sleep_for()` so the scheduler can continue
+ * running the Zigbee stack and power-management code that drives automatic light sleep.
+ */
+template <class Rep, class Period>
+void free_rtos_sleep(const std::chrono::duration<Rep, Period> d) {
+    if constexpr (std::is_same_v<std::chrono::duration<Rep, Period>, std::chrono::milliseconds>) {
+        vTaskDelay(pdMS_TO_TICKS(d.count()));
+    } else {
+        vTaskDelay(pdMS_TO_TICKS(std::chrono::duration_cast<std::chrono::milliseconds>(d).count()));
+    }
+}
+
+/**
  * Blocks the application task until the next scheduled measurement cycle while the Zigbee stack
  * remains joined and can use automatic light sleep between polls.
  */
 void wait_for_next_cycle_light_sleep() {
-    const auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(app::RetainedState::WAKE_INTERVAL);
-    ESP_LOGI(TAG, "Waiting %lld seconds before the next measurement cycle while Zigbee stays joined.", std::chrono::duration_cast<std::chrono::seconds>(delay).count());
-    vTaskDelay(pdMS_TO_TICKS(delay.count()));
+    ESP_LOGI(TAG, "Waiting %lld seconds before the next measurement cycle while Zigbee stays joined.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
+    free_rtos_sleep(app::RetainedState::WAKE_INTERVAL);
 }
 
 /**
@@ -188,7 +202,7 @@ void wait_for_next_cycle_light_sleep() {
  */
 void keep_awake_for_initial_interview() {
     ESP_LOGI(TAG, "Keeping the device awake for %lld seconds so the initial Home Assistant interview can complete.", std::chrono::duration_cast<std::chrono::seconds>(INITIAL_INTERVIEW_AWAKE_TIME).count());
-    std::this_thread::sleep_for(INITIAL_INTERVIEW_AWAKE_TIME);
+    free_rtos_sleep(INITIAL_INTERVIEW_AWAKE_TIME);
 }
 
 /**
