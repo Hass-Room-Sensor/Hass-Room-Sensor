@@ -123,7 +123,7 @@ void SeedStudioXiaoEspC6Device::prepare_for_deep_sleep() {
         sleepIndicatorActive = true;
         identifyActive = false;
     }
-    statusLed.set_on();
+    statusLed.set_off();
     ESP_ERROR_CHECK(gpio_hold_en(HASS_SENSOR_STATUS_LED_GPIO));
 }
 
