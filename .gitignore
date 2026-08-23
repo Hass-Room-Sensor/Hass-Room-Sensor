@@ -7,3 +7,6 @@ dependencies.lock
 sdkconfig
 sdkconfig.old
 sdkconfig.device
+
+# KiCad Temporary Files
+~*

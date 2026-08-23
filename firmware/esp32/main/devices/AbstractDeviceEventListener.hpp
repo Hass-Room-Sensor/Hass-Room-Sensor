@@ -20,6 +20,8 @@ class AbstractDeviceEventListener {
     [[nodiscard]] virtual bool has_debug_led() const = 0;
     [[nodiscard]] virtual bool is_debug_led_enabled() const = 0;
     virtual void set_debug_led(bool enabled) = 0;
+    virtual void set_sleep_indicator(bool sleeping) { (void)sleeping; }
+    virtual void prepare_for_deep_sleep() {}
     virtual void indicate_error() = 0;
 };
 } // namespace devices

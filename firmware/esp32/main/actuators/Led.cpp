@@ -41,7 +41,6 @@ void Led::init() {
     channelConf.gpio_num = gpio;
     channelConf.speed_mode = PWM_MODE;
     channelConf.channel = channel;
-    channelConf.intr_type = LEDC_INTR_DISABLE;
     channelConf.timer_sel = PWM_TIMER;
     channelConf.duty = 0;
     channelConf.hpoint = 0;

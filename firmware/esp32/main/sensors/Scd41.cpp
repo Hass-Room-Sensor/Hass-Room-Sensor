@@ -56,47 +56,16 @@ bool Scd41::init() const {
         ESP_LOGD(TAG, "CRC check successful.");
     }
 
-    // Make sure the sensor has enough time to enter idle state:
-    ESP_LOGI(TAG, "Waiting for sensor to enter idle state...");
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    ESP_LOGI(TAG, "Idle state reached.");
+    // The SCD4x reaches the idle state within 30 ms after power-up.
+    // Source: Table 7 in the Sensirion SCD4x datasheet, Version 1.6 (September 2024).
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
     if (!probe_device()) {
         ESP_LOGE(TAG, "Probing failed!");
+        initialized = false;
         return false;
     }
     ESP_LOGI(TAG, "Probing was successful!");
-
-    ESP_LOGI(TAG, "Stopping periodic measurement...");
-
-    // Stop all existing measurements:
-    if (!stop_periodic_measurement()) {
-        return false;
-    }
-    ESP_LOGI(TAG, "Periodic measurement stopped.");
-    ESP_LOGI(TAG, "Performing self test...");
-
-    // Test if everything works:
-    if (!perform_self_test()) {
-        ESP_LOGW(TAG, "Self test failed. Trying to recover sensor...");
-        if (!try_recover()) {
-            ESP_LOGE(TAG, "Recovering sensor failed. The sensor might report wrong values!");
-        }
-    } else {
-        ESP_LOGI(TAG, "Self test done.");
-    }
-
-    // ESP_LOGI(TAG, "Reinit started...");
-    // if (!reinit()) {
-    //     return false;
-    // }
-    // ESP_LOGI(TAG, "Reinit done.");
-
-    // ESP_LOGI(TAG, "Performing factory reset...");
-    // if (!perform_factory_reset()) {
-    //     return false;
-    // }
-    // ESP_LOGI(TAG, "Factory reset done.");
 
     // For Dagersheim: https://de-de.topographic-map.com/map-27vsrr/Dagersheim/
     set_sensor_altitude(438);
@@ -106,17 +75,15 @@ bool Scd41::init() const {
     ESP_LOGI(TAG, "SCD41 altitude: %u", get_sensor_altitude());
     ESP_LOGI(TAG, "SCD41 temperature offset: %f", get_temperature_offset());
 
-    if (!start_periodic_measurement()) {
-        return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-    ESP_LOGI(TAG, "Setup and ready to use.");
+    ESP_LOGI(TAG, "Setup and ready to use in idle single-shot mode.");
+    initialized = true;
     return true;
 }
 
 Scd41::~Scd41() {
-    (void) stop_periodic_measurement();
+    if (initialized) {
+        (void) stop_periodic_measurement();
+    }
 
     // Cleanup I2C devices
     ESP_ERROR_CHECK(i2c_master_bus_rm_device(dev));
@@ -238,6 +205,21 @@ std::optional<measurement_t> Scd41::read_measurement() const {
     return convert_measurement(data);
 }
 
+std::optional<measurement_t> Scd41::read_single_shot(std::optional<uint16_t> ambientPressureHpa) const {
+    if (ambientPressureHpa) {
+        set_ambient_pressure(*ambientPressureHpa);
+    }
+
+    if (!measure_single_shot()) {
+        return std::nullopt;
+    }
+
+    // The SCD41 measure_single_shot command requires up to 5 seconds.
+    // Source: Table 32 in the Sensirion SCD4x datasheet, Version 1.6 (September 2024).
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    return read_measurement();
+}
+
 bool Scd41::get_data_ready_status() const {
     ESP_LOGD(TAG, "Getting data ready state...");
     std::array<uint16_t, 1> response{};
@@ -334,6 +316,13 @@ uint16_t Scd41::get_sensor_altitude() const {
     return data[0];
 }
 
+void Scd41::set_ambient_pressure(uint16_t pressureHpa) const {
+    ESP_LOGD(TAG, "Setting ambient pressure compensation to %u hPa.", pressureHpa);
+    if (!write(0xe000, pressureHpa, std::chrono::milliseconds(1))) {
+        ESP_LOGW(TAG, "Failed to update the SCD41 ambient pressure compensation value.");
+    }
+}
+
 void Scd41::persist_settings() const {
     ESP_LOGD(TAG, "Storing settings persistent...");
     if (write(0x3615, std::chrono::milliseconds(800))) {
@@ -342,6 +331,16 @@ void Scd41::persist_settings() const {
         ESP_LOGE(TAG, "Storing settings persistent failed.");
     }
 }
+
+bool Scd41::measure_single_shot() const {
+    if (write(0x219d, std::chrono::milliseconds(1))) {
+        return true;
+    }
+
+    ESP_LOGE(TAG, "Failed to trigger an SCD41 single-shot measurement.");
+    return false;
+}
+
 uint8_t Scd41::calc_crc(const std::span<uint8_t> data) {
     static const uint8_t CRC8_POLYNOMIAL = 0x31;
     static const uint8_t CRC8_INIT = 0xFF;

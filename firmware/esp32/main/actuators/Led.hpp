@@ -43,9 +43,9 @@ class Led {
   public:
     Led(gpio_num_t gpio, bool lowActive, uint8_t onDutyPercent = 100);
     Led(Led&&) = default;
-    Led(const Led&) = default;
+    Led(const Led&) = delete;
     Led& operator=(Led&&) = default;
-    Led& operator=(const Led&) = default;
+    Led& operator=(const Led&) = delete;
     ~Led();
 
     void init();
