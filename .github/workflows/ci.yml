@@ -108,7 +108,7 @@ jobs:
           cp firmware/esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.bin
           cp firmware/esp32/build/hass_sensor.bin ota_${{ matrix.device_target }}/hass_sensor_${{ matrix.device_target }}.ota
           cd ota_${{ matrix.device_target }}
-          python ../image_builder_tool.py --manuf-id ${manuf_id} --image-type ${image_type} --file-version ${version_hex} --tag hass_sensor_${{ matrix.device_target }}.ota
+          python ../image_builder_tool.py --manuf-id ${manuf_id} --image-type ${image_type} --file-version ${version_hex} --tag-file hass_sensor_${{ matrix.device_target }}.ota
           zigpy ota generate-index --ota-url-root="" hass_sensor_${{ matrix.device_target }}.ota > ota.json
           file_size=$(stat -c %s "hass_sensor_${{ matrix.device_target }}.ota")
           # Add the missing 'file_size' property and wrap it into 'firmwares'.
