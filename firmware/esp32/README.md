@@ -207,7 +207,7 @@ Converting a binary to a valid ZigBee OTA update file requires a few further ste
 pip install zigpy-cli zigpy
 
 # Get a copy of the tool that takes care of converting your binary to an OTA binary
-wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/main/tools/image_builder_tool/image_builder_tool.py
+wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/release/v1.0/tools/image_builder_tool/image_builder_tool.py
 ```
 
 ### 3. Convert To OTA
