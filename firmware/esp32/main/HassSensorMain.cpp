@@ -146,7 +146,7 @@ void init_power_management() {
 #ifdef CONFIG_PM_ENABLE
     esp_pm_config_t pmConfig{};
     pmConfig.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
-    pmConfig.min_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    pmConfig.min_freq_mhz = CONFIG_XTAL_FREQ; // Minimum frequency of the crystal. Saves power when the chip is for example waiting for I/O.
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
     pmConfig.light_sleep_enable = true;
 #endif
