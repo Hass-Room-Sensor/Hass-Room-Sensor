@@ -15,8 +15,15 @@
 // OTA image type to correctly identify which image is for which device.
 constexpr uint16_t OTA_IMAGE_TYPE = 100;
 
-// Use the internal or external antenna
-constexpr bool HASS_SENSOR_ANTENNA_EXTERNAL = false;
+// Use the internal or external antenna.
+constexpr bool HASS_SENSOR_ANTENNA_EXTERNAL = true;
+
+// Input high when the device is battery powered.
+constexpr gpio_num_t HASS_SENSOR_POWER_SOURCE_GPIO = gpio_num_t::GPIO_NUM_21;
+
+// The XIAO BOOT button pulls GPIO9 low while pressed.
+constexpr gpio_num_t HASS_SENSOR_FACTORY_RESET_GPIO = gpio_num_t::GPIO_NUM_9;
+constexpr bool HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE = true;
 
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_22;
@@ -46,6 +53,13 @@ constexpr uint8_t HASS_SENSOR_GREEN_LED_MAX_BRIGHTNESS_PERCENT = 1; // Yes, 1% m
 // OTA image type to correctly identify which image is for which device.
 constexpr uint16_t OTA_IMAGE_TYPE = 200;
 
+// Input high when the device is battery powered.
+constexpr gpio_num_t HASS_SENSOR_POWER_SOURCE_GPIO = gpio_num_t::GPIO_NUM_3;
+
+// External active-high factory-reset input used by the development kit setup.
+constexpr gpio_num_t HASS_SENSOR_FACTORY_RESET_GPIO = gpio_num_t::GPIO_NUM_1;
+constexpr bool HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE = false;
+
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_12;
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SCL_GPIO = gpio_num_t::GPIO_NUM_22;
@@ -63,6 +77,13 @@ constexpr gpio_num_t HASS_SENSOR_DEBUG_RGB_LED_GPIO = gpio_num_t::GPIO_NUM_8;
 
 // OTA image type to correctly identify which image is for which device.
 constexpr uint16_t OTA_IMAGE_TYPE = 300;
+
+// Input high when the device is battery powered.
+constexpr gpio_num_t HASS_SENSOR_POWER_SOURCE_GPIO = gpio_num_t::GPIO_NUM_3;
+
+// External active-high factory-reset input used by the development kit setup.
+constexpr gpio_num_t HASS_SENSOR_FACTORY_RESET_GPIO = gpio_num_t::GPIO_NUM_1;
+constexpr bool HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE = false;
 
 // SCD4X I2C GPIOs
 constexpr gpio_num_t HASS_SENSOR_SCD4X_SDA_GPIO = gpio_num_t::GPIO_NUM_12;

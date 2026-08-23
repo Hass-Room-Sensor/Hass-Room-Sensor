@@ -28,6 +28,9 @@ class RetainedState {
      */
     RetainedState();
 
+    /** Clears all RTC-retained sensor and reporting state. */
+    static void reset();
+
     /**
      * Returns true until the first successful publish after power-on or reset.
      */

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "defs/DeviceDefs.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
 #include "models/SensorModels.hpp"
 #include "sensors/GpioInput.hpp"
@@ -81,7 +82,7 @@ class ZDevice {
      */
     void set_connected_light_sleep_allowed(bool allowed);
 
-    /** Triggers a Zigbee factory reset. */
+    /** Erases application and Zigbee state, then reboots as a factory-new device. */
     void reset() const;
     /** Updates the externally visible device state. */
     void set_device_state(ZigbeeDeviceState newState);
@@ -216,25 +217,30 @@ class ZDevice {
     // The underlying hardware device, e.g. a Seed Studio XIAO ESP32-C6 or ESP32 dev kit,
     // listening for Zigbee state changes and identify effects.
     std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener{nullptr};
-    /** Reset GPIO used for factory-resetting the Zigbee stack. */
-    sensors::GpioInput resetGpio{GPIO_NUM_16};
+    /** Board-specific input used to request a full factory reset. */
+    sensors::GpioInput factoryResetButton{
+            HASS_SENSOR_FACTORY_RESET_GPIO,
+            HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+            HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE};
     /** Input that selects whether the device should advertise itself as battery powered. */
-    sensors::GpioInput powerSourceBattery{GPIO_NUM_3};
+    sensors::GpioInput powerSourceBattery{HASS_SENSOR_POWER_SOURCE_GPIO};
     /** Current high-level Zigbee state used by the hardware listener. */
     ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
     /** Event group used to wake the main application once Zigbee reconnects. */
-    EventGroupHandle_t eventGroup_{nullptr};
+    EventGroupHandle_t eventGroup{nullptr};
+    /** Task that receives factory-reset GPIO interrupt notifications. */
+    TaskHandle_t factoryResetTask{nullptr};
     /** True once the Zigbee stack task has been created. */
     bool initialized_{false};
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     /** PM lock that prevents automatic ESP light sleep until the device is joined to Zigbee. */
-    esp_pm_lock_handle_t noLightSleepLock_{nullptr};
+    esp_pm_lock_handle_t noLightSleepLock{nullptr};
     /** Tracks whether the PM lock is currently held. */
-    bool lightSleepBlocked_{false};
+    bool lightSleepBlocked{false};
 #endif
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
     /** True once the application allows light sleep for an already connected Zigbee session. */
-    bool connectedLightSleepAllowed_{false};
+    bool connectedLightSleepAllowed{false};
 #endif
 
     /** Small state bundle used while parsing OTA element frames. */
@@ -249,6 +255,12 @@ class ZDevice {
 
     /** Entry point of the long-lived Zigbee task. */
     static void zb_main_task(void* arg);
+    /** Waits for and debounces the board-specific full-factory-reset button. */
+    static void factory_reset_button_task(void* arg);
+    /** Wakes the factory-reset task from the configured GPIO edge interrupt. */
+    static void factory_reset_button_isr(void* arg);
+    /** Returns true while the configured factory-reset input is active. */
+    [[nodiscard]] bool is_factory_reset_button_pressed() const;
     /** Top-level Zigbee action callback registered with the stack. */
     static esp_err_t on_zb_action(esp_zb_core_action_callback_id_t callbackId, const void* message);
     /** Handles the Zigbee app-signal switchboard. */

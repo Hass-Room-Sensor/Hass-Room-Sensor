@@ -11,7 +11,7 @@ GpioInput::GpioInput(gpio_num_t gpio, gpio_pullup_t pullUp, gpio_pulldown_t pull
     ESP_ERROR_CHECK(gpio_config(&io_conf));
 }
 
-bool GpioInput::is_powered() {
+bool GpioInput::is_powered() const {
     return gpio_get_level(gpio) == 1;
 }
 } // namespace sensors

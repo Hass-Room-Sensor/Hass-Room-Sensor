@@ -34,6 +34,11 @@ RetainedState::RetainedState() : storedState_(&state()) {
     }
 }
 
+void RetainedState::reset() {
+    state() = StoredState{};
+    ESP_LOGI(TAG, "Cleared retained state storage.");
+}
+
 RetainedState::StoredState& RetainedState::state() {
     // RTC memory survives deep sleep, which makes it a good fit for "report only on change"
     // bookkeeping without paying the cost and wear of an NVS write every five minutes.

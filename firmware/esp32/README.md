@@ -25,6 +25,13 @@ Besides multiple protocols, multiple devices are supported.
 
 ![LED behavior](docs/seed_studio_xiao_esp32_c6_sensor_board.svg)
 
+#### Pinout
+
+| GPIO | Action |
+| ---- | ------ |
+| 21   | Zigbee device power mode. low - battery, high - DC |
+| 9    | Full factory reset when the XIAO BOOT button is pressed |
+
 #### Sensor Topology
 
 The current firmware supports the following sensor topology on the custom board:
@@ -45,8 +52,8 @@ Datasheets and vendor references used by the firmware:
 | ---- | ------ |
 | 12   | SCD41 SDA |
 | 22   | SCD41 SCL |
-| 1    | Zigbee factory reset if high |
-| 3    | ZigBee device power mode. low - DC, high - battery |
+| 1    | Full factory reset if high |
+| 3    | Zigbee device power mode. low - battery, high - DC |
 
 ### Official ESP32 C6 Dev Kit
 
@@ -56,8 +63,8 @@ Datasheets and vendor references used by the firmware:
 | ---- | ------ |
 | 12   | SCD41 SDA |
 | 22   | SCD41 SCL |
-| 1    | Zigbee factory reset if high |
-| 3    | ZigBee device power mode. low - DC, high - battery |
+| 1    | Full factory reset if high |
+| 3    | Zigbee device power mode. low - battery, high - DC |
 
 ## Runtime Model
 

@@ -1,5 +1,6 @@
 #include "zigbee/ZDevice.hpp"
 
+#include "app/RetainedState.hpp"
 #include "defs/DeviceDefs.hpp"
 
 #include "esp_err.h"
@@ -8,12 +9,14 @@
 #ifdef CONFIG_PM_ENABLE
 #include "esp_pm.h"
 #endif
+#include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
 #include "esp_zigbee_core.h"
 #include "esp_zigbee_type.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
 #include "zcl/esp_zigbee_zcl_carbon_dioxide_measurement.h"
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
@@ -60,9 +63,9 @@ const std::unique_ptr<ZDevice>& ZDevice::get_instance() {
 }
 
 void ZDevice::init() {
-    if (eventGroup_ == nullptr) {
-        eventGroup_ = xEventGroupCreate();
-        assert(eventGroup_ != nullptr);
+    if (eventGroup == nullptr) {
+        eventGroup = xEventGroupCreate();
+        assert(eventGroup != nullptr);
     }
 
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
@@ -77,31 +80,47 @@ void ZDevice::init() {
         ESP_LOGW(TAG, "No device listener registered; hardware callbacks are disabled.");
     }
 
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+    const gpio_int_type_t resetWakeLevel = HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
+    ESP_ERROR_CHECK(gpio_wakeup_enable(HASS_SENSOR_FACTORY_RESET_GPIO, resetWakeLevel));
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+#endif
+
     esp_zb_platform_config_t config = {};
     config.radio_config.radio_mode = ZB_RADIO_MODE_NATIVE;
     config.host_config.host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE;
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
 
     xTaskCreate(ZDevice::zb_main_task, "zigbee_main", 4096, this, 5, nullptr);
+    xTaskCreate(ZDevice::factory_reset_button_task, "factory_reset", 2048, this, 5, &factoryResetTask);
+    assert(factoryResetTask != nullptr);
+
+    const gpio_int_type_t resetInterrupt = HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_INTR_NEGEDGE : GPIO_INTR_POSEDGE;
+    ESP_ERROR_CHECK(gpio_set_intr_type(HASS_SENSOR_FACTORY_RESET_GPIO, resetInterrupt));
+    const esp_err_t isrServiceResult = gpio_install_isr_service(0);
+    if (isrServiceResult != ESP_OK && isrServiceResult != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(isrServiceResult);
+    }
+    ESP_ERROR_CHECK(gpio_isr_handler_add(HASS_SENSOR_FACTORY_RESET_GPIO, ZDevice::factory_reset_button_isr, this));
     initialized_ = true;
 }
 
 bool ZDevice::has_connection() const {
-    return eventGroup_ != nullptr && (xEventGroupGetBits(eventGroup_) & CONNECTED_BIT) != 0;
+    return eventGroup != nullptr && (xEventGroupGetBits(eventGroup) & CONNECTED_BIT) != 0;
 }
 
 bool ZDevice::wait_for_connection(std::chrono::milliseconds timeout) const {
-    const EventBits_t bits = xEventGroupWaitBits(eventGroup_, CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
+    const EventBits_t bits = xEventGroupWaitBits(eventGroup, CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
     return (bits & CONNECTED_BIT) != 0;
 }
 
 void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
-    if (connectedLightSleepAllowed_ == allowed) {
+    if (connectedLightSleepAllowed == allowed) {
         return;
     }
 
-    connectedLightSleepAllowed_ = allowed;
+    connectedLightSleepAllowed = allowed;
 #if defined(CONFIG_PM_ENABLE)
     sync_light_sleep_permission();
 #endif
@@ -112,31 +131,31 @@ void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
 
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
 void ZDevice::init_light_sleep_blocker() {
-    if (noLightSleepLock_ != nullptr) {
+    if (noLightSleepLock != nullptr) {
         return;
     }
 
-    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "zigbee_join", &noLightSleepLock_));
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "zigbee_join", &noLightSleepLock));
     sync_light_sleep_permission();
 }
 
 void ZDevice::sync_light_sleep_permission() {
-    if (noLightSleepLock_ == nullptr) {
+    if (noLightSleepLock == nullptr) {
         return;
     }
 
-    const bool shouldBlockLightSleep = deviceState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed_;
-    if (shouldBlockLightSleep && !lightSleepBlocked_) {
-        ESP_ERROR_CHECK(esp_pm_lock_acquire(noLightSleepLock_));
-        lightSleepBlocked_ = true;
+    const bool shouldBlockLightSleep = deviceState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed;
+    if (shouldBlockLightSleep && !lightSleepBlocked) {
+        ESP_ERROR_CHECK(esp_pm_lock_acquire(noLightSleepLock));
+        lightSleepBlocked = true;
         if (deviceState == ZigbeeDeviceState::CONNECTED) {
             ESP_LOGI(TAG, "Blocking ESP light sleep while the initial Zigbee commissioning window is still active.");
         } else {
             ESP_LOGI(TAG, "Blocking ESP light sleep until the Zigbee network is joined.");
         }
-    } else if (!shouldBlockLightSleep && lightSleepBlocked_) {
-        ESP_ERROR_CHECK(esp_pm_lock_release(noLightSleepLock_));
-        lightSleepBlocked_ = false;
+    } else if (!shouldBlockLightSleep && lightSleepBlocked) {
+        ESP_ERROR_CHECK(esp_pm_lock_release(noLightSleepLock));
+        lightSleepBlocked = false;
         ESP_LOGI(TAG, "Allowing ESP light sleep while the Zigbee session stays joined.");
     }
 }
@@ -144,7 +163,7 @@ void ZDevice::sync_light_sleep_permission() {
 
 bool ZDevice::is_light_sleep_allowed_now() const {
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
-    return has_connection() && connectedLightSleepAllowed_;
+    return has_connection() && connectedLightSleepAllowed;
 #else
     return false;
 #endif
@@ -191,8 +210,42 @@ void ZDevice::publish(const PublishRequest& request) {
 }
 
 void ZDevice::reset() const {
-    ESP_LOGW(TAG, "Performing Zigbee factory reset...");
+    ESP_LOGW(TAG, "Performing full factory reset...");
+    app::RetainedState::reset();
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ESP_LOGI(TAG, "Erased application NVS. Erasing Zigbee storage and rebooting...");
     esp_zb_factory_reset();
+}
+
+bool ZDevice::is_factory_reset_button_pressed() const {
+    const bool inputHigh = factoryResetButton.is_powered();
+    return HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? !inputHigh : inputHigh;
+}
+
+void ZDevice::factory_reset_button_task(void* arg) {
+    auto* device = static_cast<ZDevice*>(arg);
+    assert(device != nullptr);
+
+    constexpr std::chrono::milliseconds DEBOUNCE_TIME{100};
+
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(DEBOUNCE_TIME.count()));
+        if (device->is_factory_reset_button_pressed()) {
+            device->reset();
+        }
+    }
+}
+
+void ZDevice::factory_reset_button_isr(void* arg) {
+    auto* device = static_cast<ZDevice*>(arg);
+    assert(device != nullptr);
+
+    BaseType_t higherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(device->factoryResetTask, &higherPriorityTaskWoken);
+    if (higherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 void ZDevice::set_basic_attr(const std::string& basicAttrStr, std::vector<char>& basicAttrStrCache, esp_zb_zcl_basic_attr_t attrId) {
@@ -261,7 +314,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
 
     ZDevice& device = self();
 
-    const bool batteryPowered = device.powerSourceBattery.is_powered();
+    const bool batteryPowered = !device.powerSourceBattery.is_powered();
     if (batteryPowered) {
         device.basicClusterConfig.power_source = 0x03;
     } else {
@@ -325,12 +378,8 @@ void ZDevice::zb_main_task(void* /*arg*/) {
         // power-source attribute. Apply the same end-device workaround Espressif uses in its Zigbee
         // Arduino wrapper so the node is interviewed as battery powered.
         // More/Source: https://github.com/espressif/arduino-esp32/blob/3.3.7/libraries/Zigbee/src/ZigbeeCore.cpp#L141-L144
-        zb_set_ed_node_descriptor(true, false, true);
+        zb_set_ed_node_descriptor(false, false, true);
         ESP_LOGI(TAG, "Applied battery-powered end-device node descriptor workaround for ZHA.");
-    }
-
-    if (device.resetGpio.is_powered()) {
-        device.reset();
     }
 
     ESP_LOGD(TAG, "esp_zb_stack_main_loop.");
@@ -626,11 +675,11 @@ void ZDevice::set_device_state(ZigbeeDeviceState newState) {
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     sync_light_sleep_permission();
 #endif
-    if (eventGroup_) {
+    if (eventGroup) {
         if (deviceState == ZigbeeDeviceState::CONNECTED) {
-            xEventGroupSetBits(eventGroup_, CONNECTED_BIT);
+            xEventGroupSetBits(eventGroup, CONNECTED_BIT);
         } else {
-            xEventGroupClearBits(eventGroup_, CONNECTED_BIT);
+            xEventGroupClearBits(eventGroup, CONNECTED_BIT);
         }
     }
     if (deviceListener) {
