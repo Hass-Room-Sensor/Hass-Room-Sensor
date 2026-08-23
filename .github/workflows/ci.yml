@@ -25,6 +25,7 @@ jobs:
       - name: Set target
         id: set_target
         shell: bash
+        working-directory: firmware/esp32
         run: |
           # Ensure defaults are applied fresh (avoid reusing a previous sdkconfig)
           rm -f sdkconfig sdkconfig.old sdkconfig.device
@@ -59,7 +60,7 @@ jobs:
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v6.0
+          esp_idf_version: v6.0.2
           target: ${{ steps.set_target.outputs.espIdf_target }}
           path: firmware/esp32
           command: idf.py build

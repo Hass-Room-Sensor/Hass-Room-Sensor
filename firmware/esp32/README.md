@@ -102,11 +102,11 @@ The Zigbee firmware exposes standard Home Automation profile clusters on the mai
 
 ### ESP-IDF
 
-For building the firmware, [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/linux-setup.html) `6.0` is expected.
+For building the firmware, [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/linux-setup.html) `v6.0.2` is expected.
 If you installed ESP-IDF with the Espressif installer, activate the environment first, for example:
 
 ```bash
-source /var/home/fabian/.espressif/tools/activate_idf_v6.0.sh
+source ~/.espressif/tools/activate_idf_v6.0.2.sh
 ```
 
 The first CMake configure step also fetches the Bosch BME690 SensorAPI from its upstream GitHub repository via CMake `FetchContent`, so an internet connection is required at least once for a fresh build directory.

@@ -25,24 +25,22 @@ menu "HASS Environment Sensor"
 
     choice HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET
         prompt "The target device you want to build for"
+        default HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
 
         config HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
             bool "seed studio XIAO ESPC6"
-            default y
             help
                 Compile the application for the seed studio XIAO ESPC6.
                 Docs: https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/
         
         config HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT
             bool "Official ESP32 H2 Dev Kit"
-            default n
             help
                 Compile the application for the official ESP32 H2 developer kit.
                 Docs: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32h2/index.html
         
         config HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT
             bool "Official ESP32 C6 Dev Kit"
-            default n
             help
                 Compile the application for the official ESP32 C6 developer kit.
                 Docs: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c6/index.html
