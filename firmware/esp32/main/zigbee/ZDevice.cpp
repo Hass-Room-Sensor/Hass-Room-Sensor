@@ -326,35 +326,19 @@ void ZDevice::factory_reset_button_task(void* arg) {
     using Clock = app::ButtonGesture::Clock;
     app::ButtonGesture gesture{device->is_factory_reset_button_pressed()};
 
+    TickType_t waitTicks = portMAX_DELAY;
     while (true) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        // Any edge restarts the 50 ms debounce period.
-        while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) != 0) {
+        ulTaskNotifyTake(pdTRUE, waitTicks);
+        const auto now = Clock::now();
+        const auto event = gesture.update(device->is_factory_reset_button_pressed(), now);
+        device->set_button_processing(gesture.is_processing());
+        if (event == app::ButtonGesture::Event::FACTORY_RESET) {
+            device->reset();
+        } else if (event == app::ButtonGesture::Event::SHORT_PRESS) {
+            device->open_maintenance_window(app::AwakeReasons::short_press_maintenance);
         }
-        auto event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
-        if (event == app::ButtonGesture::Event::PRESSED) {
-            device->set_button_processing(true);
-            const auto holdStarted = Clock::now();
-            while (gesture.is_pressed()) {
-                const auto elapsed = Clock::duration(Clock::now() - holdStarted);
-                const auto remaining = std::chrono::seconds{10} - elapsed;
-                const TickType_t waitTicks = remaining <= Clock::duration::zero() ? 0 : pdMS_TO_TICKS(std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
-                const bool edge = ulTaskNotifyTake(pdTRUE, waitTicks) != 0;
-                if (edge) {
-                    while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) != 0) {
-                    }
-                    event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
-                } else {
-                    event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
-                }
-                if (event == app::ButtonGesture::Event::FACTORY_RESET)
-                    device->reset();
-                if (event == app::ButtonGesture::Event::SHORT_PRESS) {
-                    device->open_maintenance_window(app::AwakeReasons::short_press_maintenance);
-                    device->set_button_processing(false);
-                }
-            }
-        }
+        const auto delay = gesture.next_update_delay(now);
+        waitTicks = delay ? std::max<TickType_t>(1, pdMS_TO_TICKS(std::chrono::ceil<std::chrono::milliseconds>(*delay).count())) : portMAX_DELAY;
     }
 }
 
