@@ -25,6 +25,7 @@ jobs:
       - name: Set target
         id: set_target
         shell: bash
+        working-directory: firmware/esp32
         run: |
           # Ensure defaults are applied fresh (avoid reusing a previous sdkconfig)
           rm -f sdkconfig sdkconfig.old sdkconfig.device
@@ -59,7 +60,7 @@ jobs:
       - name: esp-idf build
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.1
+          esp_idf_version: v6.0.2
           target: ${{ steps.set_target.outputs.espIdf_target }}
           path: firmware/esp32
           command: idf.py build
@@ -75,7 +76,7 @@ jobs:
       - name: Install OTA Dependencies
         run: |
           pip install zigpy-cli zigpy
-          wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/main/tools/image_builder_tool/image_builder_tool.py
+          wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/release/v1.0/tools/image_builder_tool/image_builder_tool.py
 
       - name: Create OTA
         run: |

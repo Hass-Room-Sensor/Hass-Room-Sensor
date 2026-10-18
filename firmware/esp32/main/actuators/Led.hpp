@@ -31,6 +31,7 @@ class Led {
     // If the LED is on, define the percentage of that time it is actually on to simulate reduced LED brightness.
     uint8_t onDutyPercent{100};
     ledc_channel_t channel{};
+    bool gpioHeld{false};
     // Will be increased every time the LED state changes. Allows the worker thread to sleep until something changed.
     uint64_t stateVersion{0};
 
@@ -43,9 +44,9 @@ class Led {
   public:
     Led(gpio_num_t gpio, bool lowActive, uint8_t onDutyPercent = 100);
     Led(Led&&) = default;
-    Led(const Led&) = default;
+    Led(const Led&) = delete;
     Led& operator=(Led&&) = default;
-    Led& operator=(const Led&) = default;
+    Led& operator=(const Led&) = delete;
     ~Led();
 
     void init();
@@ -57,6 +58,10 @@ class Led {
 
   private:
     void run(std::stop_token st);
+    /** Releases a retained GPIO level before LEDC or GPIO changes the output. */
+    void release_gpio_hold();
+    /** Retains the configured inactive output level across peripheral power-down. */
+    void hold_gpio_off();
     void apply_off();
     void apply_on_duty();
     void apply_duty(uint32_t duty);

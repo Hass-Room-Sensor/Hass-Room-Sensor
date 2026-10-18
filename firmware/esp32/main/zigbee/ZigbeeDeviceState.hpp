@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 namespace zigbee {
 enum class ZigbeeDeviceState : uint8_t {
@@ -26,4 +27,12 @@ enum class ZigbeeDeviceState : uint8_t {
      **/
     OTA
 };
+
+/** Returns a connectivity update for network states; OTA changes activity without changing connectivity. */
+[[nodiscard]] constexpr std::optional<bool> connection_update(ZigbeeDeviceState state) {
+    if (state == ZigbeeDeviceState::OTA) {
+        return std::nullopt;
+    }
+    return state == ZigbeeDeviceState::CONNECTED;
+}
 } // namespace zigbee

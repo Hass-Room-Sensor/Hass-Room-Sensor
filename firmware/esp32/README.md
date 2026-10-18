@@ -8,7 +8,7 @@ The goal is to support pushing data to Home Assistant via multiple different int
 |-----------------|-----------|---------------------------------|
 | WIFI (MQTT)     | TODO      |                                 |
 | REST            | TODO      |                                 |
-| ZigBee          | Supported | Temperature, Humidity, CO2, OTA |
+| ZigBee          | Supported | Temperature, Humidity, Pressure, CO2, Battery, OTA |
 | Thread (Matter) | TODO      |                                 |
 
 Besides multiple protocols, multiple devices are supported.
@@ -25,6 +25,36 @@ Besides multiple protocols, multiple devices are supported.
 
 ![LED behavior](docs/seed_studio_xiao_esp32_c6_sensor_board.svg)
 
+#### Pinout
+
+| GPIO | Action |
+| ---- | ------ |
+| 21   | Zigbee device power mode. low - battery, high - DC |
+| 9    | BOOT button: short press opens maintenance; continuous 10-second hold requests factory reset |
+
+A cold boot or physical RESET opens a 60-second maintenance window. While the application is
+running, a debounced BOOT press released before ten seconds extends maintenance for five minutes
+without erasing pairing or application state. A fresh, continuous ten-second BOOT hold performs a
+factory reset once; a BOOT button already held as button handling starts must first be released.
+
+For USB flashing, connect a data-capable cable and press RESET to reopen the maintenance window,
+then start the flash. If application USB is unavailable, hold BOOT, press and release RESET, then
+release BOOT to enter the ESP32-C6 ROM downloader. This ROM sequence does not run the application
+factory-reset gesture or erase Zigbee credentials. Use the stable `/dev/serial/by-id/` device path
+when selecting the flash port.
+
+#### Sensor Topology
+
+The current firmware supports the following sensor topology on the custom board:
+
+| Sensor | Bus | Purpose | Notes |
+|--------|-----|---------|-------|
+| Sensirion SCD4x / SCD41 | I2C | CO2, temperature, humidity | Used in single-shot mode so the ESP can return to deep sleep between measurements. |
+| Bosch BME690 | I2C | Pressure, temperature, humidity | Sampled in forced mode; the measured pressure is forwarded to the SCD41 for pressure compensation. |
+
+Datasheets and vendor references used by the firmware:
+
+
 ### Official ESP32 H2 Dev Kit
 
 #### Pinout
@@ -33,8 +63,8 @@ Besides multiple protocols, multiple devices are supported.
 | ---- | ------ |
 | 12   | SCD41 SDA |
 | 22   | SCD41 SCL |
-| 1    | Zigbee factory reset if high |
-| 3    | ZigBee device power mode. low - DC, high - battery |
+| 1    | Full factory reset if high |
+| 3    | Zigbee device power mode. low - battery, high - DC |
 
 ### Official ESP32 C6 Dev Kit
 
@@ -44,15 +74,58 @@ Besides multiple protocols, multiple devices are supported.
 | ---- | ------ |
 | 12   | SCD41 SDA |
 | 22   | SCD41 SCL |
-| 1    | Zigbee factory reset if high |
-| 3    | ZigBee device power mode. low - DC, high - battery |
+| 1    | Full factory reset if high |
+| 3    | Zigbee device power mode. low - battery, high - DC |
+
+## Runtime Model
+
+The firmware measures every 5 minutes and supports two Kconfig-selectable sleep strategies:
+
+1. `Light sleep` is the default. The Zigbee sleepy end device stays joined to the network, the ESP
+   uses automatic light sleep between measurement cycles, and commands such as Home Assistant
+   `Identify` can reach the device while it is idle.
+2. `Deep sleep` fully powers the SoC down between cycles and reboots on every wake, which minimizes
+   idle power but makes the device unreachable while it sleeps.
+
+For both modes, each measurement cycle works like this:
+
+1. The ESP starts or resumes the current measurement cycle every 5 minutes.
+2. The BME690 is sampled in forced mode, which automatically returns the sensor to sleep after the conversion.
+3. The SCD41 is sampled in single-shot mode while the current pressure from the BME690 is injected as ambient pressure compensation.
+4. Temperature and humidity are published on every cycle. Pressure and CO2 are only published when the quantized Zigbee attribute changed since the last successful report.
+5. Battery voltage is sampled at startup and once per hour. Values are published on startup, after a change of at least two percentage points, and once every 24 hours.
+6. The selected sleep strategy is entered until the next cycle.
+
+Scheduled reports are sent explicitly to the Home Assistant coordinator and wait for an acknowledged
+APS transmission. An attribute update alone does not count as a successful report. Failed or timed-out
+report groups leave their retained history unchanged, and OTA remains an independent awake activity
+even if network connectivity changes during the transfer.
+
+## Home Assistant / ZHA Compatibility
+
+The Zigbee firmware exposes standard Home Automation profile clusters on the main sensor endpoint:
+
+* Temperature Measurement
+* Relative Humidity Measurement
+* Pressure Measurement
+* Carbon Dioxide Concentration Measurement
+* Power Configuration
+* Basic
+* OTA Upgrade
+* ZHA compatible battery reporting
 
 ## Building
 
 ### ESP-IDF
 
-For building the [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites) version `5.5.1` is required.
-Follow the following guide to install the standard toolchain: https://docs.espressif.com/projects/esp-idf/en/latest/esp32h2/get-started/linux-macos-setup.html#get-started-prerequisites
+For building the firmware, [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/linux-setup.html) `v6.0.2` is expected.
+If you installed ESP-IDF with the Espressif installer, activate the environment first, for example:
+
+```bash
+source ~/.espressif/tools/activate_idf_v6.0.2.sh
+```
+
+The first CMake configure step also fetches the Bosch BME690 SensorAPI from its upstream GitHub repository via CMake `FetchContent`, so an internet connection is required at least once for a fresh build directory.
 
 ### Terminal
 
@@ -60,9 +133,16 @@ Follow the following guide to install the standard toolchain: https://docs.espre
 # Ensure you are inside this directory
 cd firmware/esp32/
 
-# Select a debug or release build
-export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug;sdkconfig.device"
-# export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"
+# Select one profile. Use development for serial logging/flashing over USB:
+export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug;sdkconfig.device;sdkconfig.profile.development"
+# Use battery for power measurements; USB host connection will not keep the CPU awake:
+# export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release;sdkconfig.device;sdkconfig.profile.battery"
+
+# The development profile prevents automatic light sleep while USB is connected,
+# so its current is not representative of battery operation. The battery profile
+# permits sleep with USB attached; USB Serial/JTAG may become inaccessible while
+# the device sleeps. Press RESET to reopen maintenance, or use BOOT+RESET to enter
+# the ROM downloader if application USB is unavailable.
 
 # Select the underlying EPS hardware.
 # For the 'seed studio XIAO ESPC6' or 'Official ESP32 C6 Dev Kit':
@@ -75,6 +155,8 @@ cat > sdkconfig.device <<'EOF'
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6=y
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_H2_DEV_KIT=n
 CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_ESP32_C6_DEV_KIT=n
+CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP=y
+CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_DEEP_SLEEP=n
 EOF
 
 # Ensure defaults are applied fresh (avoid reusing a previous sdkconfig)
@@ -83,8 +165,8 @@ rm -f sdkconfig sdkconfig.old
 idf.py set-target $ESP_HARDWARE
 idf.py build
 
-# Flash (change the ttyUSB0 according to where you plug in your ESP)
-idf.py -p /dev/ttyUSB0 flash
+# Flash (change the serial port according to where you plug in your ESP)
+idf.py -p /dev/ttyACM0 flash
 ```
 
 ### Visual Studio Code
@@ -148,7 +230,7 @@ Converting a binary to a valid ZigBee OTA update file requires a few further ste
 pip install zigpy-cli zigpy
 
 # Get a copy of the tool that takes care of converting your binary to an OTA binary
-wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/main/tools/image_builder_tool/image_builder_tool.py
+wget https://raw.githubusercontent.com/espressif/esp-zigbee-sdk/refs/heads/release/v1.0/tools/image_builder_tool/image_builder_tool.py
 ```
 
 ### 3. Convert To OTA

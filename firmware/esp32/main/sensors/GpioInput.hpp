@@ -18,6 +18,6 @@ class GpioInput {
     GpioInput& operator=(const GpioInput&) = default;
     ~GpioInput() = default;
 
-    bool is_powered();
+    [[nodiscard]] bool is_powered() const;
 };
 } // namespace sensors
