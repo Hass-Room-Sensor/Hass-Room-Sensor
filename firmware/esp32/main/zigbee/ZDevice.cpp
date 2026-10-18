@@ -1,4 +1,5 @@
 #include "zigbee/ZDevice.hpp"
+#include "zigbee/StackLock.hpp"
 
 #include "app/RetainedState.hpp"
 #include "defs/DeviceDefs.hpp"
@@ -67,6 +68,7 @@ void ZDevice::init() {
     if (eventGroup == nullptr) {
         eventGroup = xEventGroupCreate();
         assert(eventGroup != nullptr);
+        xEventGroupSetBits(eventGroup, OTA_IDLE_BIT);
     }
     if (maintenanceTimer == nullptr) {
         maintenanceTimer = xTimerCreate("maintenance", pdMS_TO_TICKS(60000), pdFALSE, this, maintenance_timer_callback);
@@ -119,6 +121,15 @@ bool ZDevice::has_connection() const {
     return eventGroup != nullptr && (xEventGroupGetBits(eventGroup) & CONNECTED_BIT) != 0;
 }
 
+void ZDevice::wait_for_ota_completion() const {
+    xEventGroupWaitBits(eventGroup, OTA_IDLE_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+}
+
+bool ZDevice::is_ota_active() const {
+    const std::scoped_lock lock(powerStateMutex);
+    return awakeReasons.active(app::AwakeReason::OTA);
+}
+
 bool ZDevice::is_factory_new() const {
     return eventGroup != nullptr && (xEventGroupGetBits(eventGroup) & FACTORY_NEW_BIT) != 0;
 }
@@ -146,22 +157,32 @@ bool ZDevice::wait_for_connection(std::chrono::milliseconds timeout) const {
 
 void ZDevice::set_button_processing(bool active) {
     set_awake_reason(app::AwakeReason::BUTTON, active);
-    if (eventGroup != nullptr) {
-        if (active)
-            xEventGroupSetBits(eventGroup, BUTTON_ACTIVE_BIT);
-        else
-            xEventGroupClearBits(eventGroup, BUTTON_ACTIVE_BIT);
-    }
 }
 
 void ZDevice::set_awake_reason(app::AwakeReason reason, bool active) {
+    const std::scoped_lock lock(powerStateMutex);
     awakeReasons.set(reason, active);
+    if (reason == app::AwakeReason::BUTTON) {
+        if (active) {
+            xEventGroupSetBits(eventGroup, BUTTON_ACTIVE_BIT);
+        } else {
+            xEventGroupClearBits(eventGroup, BUTTON_ACTIVE_BIT);
+        }
+    }
+    if (reason == app::AwakeReason::OTA) {
+        if (active) {
+            xEventGroupClearBits(eventGroup, OTA_IDLE_BIT);
+        } else {
+            xEventGroupSetBits(eventGroup, OTA_IDLE_BIT);
+        }
+    }
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     sync_light_sleep_permission();
 #endif
 }
 
 void ZDevice::open_maintenance_window(std::chrono::milliseconds duration) {
+    const std::scoped_lock lock(powerStateMutex);
     awakeReasons.set_maintenance_until(app::AwakeReasons::Clock::now() + duration);
     if (eventGroup != nullptr) {
         xEventGroupSetBits(eventGroup, MAINTENANCE_ACTIVE_BIT);
@@ -178,19 +199,48 @@ void ZDevice::open_maintenance_window(std::chrono::milliseconds duration) {
 void ZDevice::maintenance_timer_callback(TimerHandle_t timer) {
     auto* device = static_cast<ZDevice*>(pvTimerGetTimerID(timer));
     assert(device != nullptr);
-    device->set_awake_reason(app::AwakeReason::MAINTENANCE, false);
-    if (device->eventGroup != nullptr) {
-        xEventGroupClearBits(device->eventGroup, MAINTENANCE_ACTIVE_BIT);
-    }
+    device->expire_awake_reason(app::AwakeReason::MAINTENANCE, timer);
 }
 
 void ZDevice::identify_timer_callback(TimerHandle_t timer) {
     auto* device = static_cast<ZDevice*>(pvTimerGetTimerID(timer));
     assert(device != nullptr);
-    device->set_awake_reason(app::AwakeReason::IDENTIFY, false);
+    device->expire_awake_reason(app::AwakeReason::IDENTIFY, timer);
+}
+
+void ZDevice::expire_awake_reason(app::AwakeReason reason, TimerHandle_t timer) {
+    const std::scoped_lock lock(powerStateMutex);
+    const auto now = app::AwakeReasons::Clock::now();
+    awakeReasons.expire(now);
+    if (const auto remaining = awakeReasons.remaining(reason, now)) {
+        const auto ticks = std::max<TickType_t>(1, pdMS_TO_TICKS(std::chrono::ceil<std::chrono::milliseconds>(*remaining).count()));
+        ESP_ERROR_CHECK(xTimerChangePeriod(timer, ticks, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+    }
+    if (!awakeReasons.active(app::AwakeReason::MAINTENANCE)) {
+        xEventGroupClearBits(eventGroup, MAINTENANCE_ACTIVE_BIT);
+    }
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    sync_light_sleep_permission();
+#endif
+}
+
+void ZDevice::set_identify_duration(std::chrono::seconds duration) {
+    const std::scoped_lock lock(powerStateMutex);
+    if (duration > std::chrono::seconds::zero()) {
+        awakeReasons.set_until(app::AwakeReason::IDENTIFY, app::AwakeReasons::Clock::now() + duration);
+        const auto ticks = std::max<TickType_t>(1, pdMS_TO_TICKS(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count()));
+        ESP_ERROR_CHECK(xTimerChangePeriod(identifyTimer, ticks, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+    } else {
+        awakeReasons.set(app::AwakeReason::IDENTIFY, false);
+        ESP_ERROR_CHECK(xTimerStop(identifyTimer, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+    }
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    sync_light_sleep_permission();
+#endif
 }
 
 void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
+    const std::scoped_lock lock(powerStateMutex);
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
     if (connectedLightSleepAllowed == allowed) {
         return;
@@ -207,6 +257,7 @@ void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
 
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
 void ZDevice::init_light_sleep_blocker() {
+    const std::scoped_lock lock(powerStateMutex);
     if (noLightSleepLock != nullptr) {
         return;
     }
@@ -221,7 +272,7 @@ void ZDevice::sync_light_sleep_permission() {
     }
 
     awakeReasons.expire(app::AwakeReasons::Clock::now());
-    const ZigbeeDeviceState currentState = deviceState.load(std::memory_order_acquire);
+    const ZigbeeDeviceState currentState = deviceState;
     const bool shouldBlockLightSleep = currentState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed || awakeReasons.any();
     if (shouldBlockLightSleep && !lightSleepBlocked) {
         ESP_ERROR_CHECK(esp_pm_lock_acquire(noLightSleepLock));
@@ -241,7 +292,8 @@ void ZDevice::sync_light_sleep_permission() {
 
 bool ZDevice::is_light_sleep_allowed_now() const {
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
-    return has_connection() && connectedLightSleepAllowed;
+    const std::scoped_lock lock(powerStateMutex);
+    return has_connection() && connectedLightSleepAllowed && !awakeReasons.any();
 #else
     return false;
 #endif
@@ -261,6 +313,7 @@ void ZDevice::handle_can_sleep_signal() {
 }
 
 void ZDevice::publish(const PublishRequest& request) {
+    const StackLock stackLock;
     if (request.environmental) {
         if (request.environmental->temperature_centi_celsius) {
             update_temp(*request.environmental->temperature_centi_celsius);
@@ -307,6 +360,7 @@ void ZDevice::set_co2_reporting_active(bool active) {
 }
 
 void ZDevice::reset() const {
+    const StackLock stackLock;
     ESP_LOGW(TAG, "Performing full factory reset...");
     app::RetainedState::reset();
     ESP_ERROR_CHECK(nvs_flash_erase());
@@ -517,14 +571,7 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* me
         }
 
         ZDevice& device = *ZDevice::get_instance();
-        if (identifyTime > 0) {
-            device.set_awake_reason(app::AwakeReason::IDENTIFY, true);
-            const TickType_t identifyTicks = std::max<TickType_t>(1, pdMS_TO_TICKS(static_cast<uint32_t>(identifyTime) * 1000U));
-            ESP_ERROR_CHECK(xTimerChangePeriod(device.identifyTimer, identifyTicks, 0) == pdPASS ? ESP_OK : ESP_FAIL);
-        } else {
-            ESP_ERROR_CHECK(xTimerStop(device.identifyTimer, 0) == pdPASS ? ESP_OK : ESP_FAIL);
-            device.set_awake_reason(app::AwakeReason::IDENTIFY, false);
-        }
+        device.set_identify_duration(std::chrono::seconds{identifyTime});
 
         if (device.deviceListener) {
             device.deviceListener->on_identify(identifyTime);
@@ -598,7 +645,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
     static esp_ota_handle_t otaHandle{};
     static const esp_partition_t* otaPartition{nullptr};
 
-    if (message->info.status != ESP_ZB_ZCL_STATUS_SUCCESS) {
+    if (message->info.status != ESP_ZB_ZCL_STATUS_SUCCESS && message->upgrade_status != ESP_ZB_ZCL_OTA_UPGRADE_STATUS_ABORT) {
         return ESP_OK;
     }
 
@@ -606,6 +653,7 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
         case ESP_ZB_ZCL_OTA_UPGRADE_STATUS_START:
             otaPartition = esp_ota_get_next_update_partition(nullptr);
             ESP_ERROR_CHECK(esp_ota_begin(otaPartition, 0, &otaHandle));
+            ZDevice::get_instance()->set_awake_reason(app::AwakeReason::OTA, true);
             ZDevice::get_instance()->set_device_state(ZigbeeDeviceState::OTA);
             break;
 
@@ -641,7 +689,8 @@ esp_err_t ZDevice::on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_mess
             }
             writtenTotal = 0;
             ZDevice::get_instance()->otaStatus.tagReceived = false;
-            ZDevice::get_instance()->set_device_state(ZigbeeDeviceState::CONNECTED);
+            ZDevice::get_instance()->set_device_state(ZDevice::get_instance()->has_connection() ? ZigbeeDeviceState::CONNECTED : ZigbeeDeviceState::CONNECTING);
+            ZDevice::get_instance()->set_awake_reason(app::AwakeReason::OTA, false);
             break;
 
         default:
@@ -786,19 +835,19 @@ void ZDevice::setup_battery_cluster() {
 }
 
 void ZDevice::set_device_state(ZigbeeDeviceState newState) {
-    const ZigbeeDeviceState previousState = deviceState.exchange(newState, std::memory_order_acq_rel);
-    if (previousState == newState) {
+    const std::scoped_lock lock(powerStateMutex);
+    if (deviceState == newState) {
         return;
     }
 
+    deviceState = newState;
     awakeReasons.set(app::AwakeReason::COMMISSIONING, newState == ZigbeeDeviceState::SETUP);
     awakeReasons.set(app::AwakeReason::RECOVERY, newState == ZigbeeDeviceState::CONNECTING);
-    awakeReasons.set(app::AwakeReason::OTA, newState == ZigbeeDeviceState::OTA);
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     sync_light_sleep_permission();
 #endif
-    if (eventGroup) {
-        if (newState == ZigbeeDeviceState::CONNECTED) {
+    if (const auto connected = connection_update(newState); eventGroup && connected) {
+        if (*connected) {
             xEventGroupSetBits(eventGroup, CONNECTED_BIT);
         } else {
             xEventGroupClearBits(eventGroup, CONNECTED_BIT);

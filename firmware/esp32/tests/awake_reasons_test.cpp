@@ -3,6 +3,7 @@
 #include <cassert>
 #include <chrono>
 
+/** Exercises the awake reasons behavior. */
 int main() {
     app::AwakeReasons reasons;
     reasons.set(app::AwakeReason::MAINTENANCE, true);
@@ -31,4 +32,15 @@ int main() {
     assert(app::AwakeReasons::startup_maintenance(false) == std::chrono::seconds{60});
     assert(app::AwakeReasons::startup_maintenance(true) == std::chrono::seconds{0});
     assert(app::AwakeReasons::short_press_maintenance == std::chrono::minutes{5});
+
+    reasons.set_until(app::AwakeReason::IDENTIFY, now + std::chrono::seconds{10});
+    reasons.set_until(app::AwakeReason::IDENTIFY, now + std::chrono::seconds{20});
+    reasons.set(app::AwakeReason::OTA, true);
+    reasons.expire(now + std::chrono::seconds{10});
+    assert(reasons.active(app::AwakeReason::IDENTIFY));
+    assert(reasons.remaining(app::AwakeReason::IDENTIFY, now + std::chrono::seconds{10}) == std::chrono::seconds{10});
+    reasons.expire(now + std::chrono::seconds{20});
+    assert(!reasons.active(app::AwakeReason::IDENTIFY));
+    assert(!reasons.remaining(app::AwakeReason::IDENTIFY, now + std::chrono::seconds{20}));
+    assert(reasons.active(app::AwakeReason::OTA));
 }

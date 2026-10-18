@@ -15,11 +15,11 @@
 #include "freertos/event_groups.h"
 #include "freertos/timers.h"
 
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -72,6 +72,10 @@ class ZDevice {
     void init();
     /** Returns true when the Zigbee session is currently connected to a network. */
     [[nodiscard]] bool has_connection() const;
+    /** Blocks the application task until any active OTA transfer has finished or aborted. */
+    void wait_for_ota_completion() const;
+    /** Returns true while an OTA transfer owns an awake reason. */
+    [[nodiscard]] bool is_ota_active() const;
     /** True while the stack reports this node as factory new rather than commissioned. */
     [[nodiscard]] bool is_factory_new() const;
     /** Waits briefly for the Zigbee stack to classify its persisted network state. */
@@ -132,10 +136,16 @@ class ZDevice {
     static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x04;
     /** Event-group bit that signals a successful Zigbee connection for the current wake session. */
     static constexpr EventBits_t CONNECTED_BIT = BIT0;
+    /** Event-group bit indicating that the USB maintenance window is active. */
     static constexpr EventBits_t MAINTENANCE_ACTIVE_BIT = BIT1;
+    /** Event-group bit indicating that the BOOT-button gesture is being evaluated. */
     static constexpr EventBits_t BUTTON_ACTIVE_BIT = BIT2;
+    /** Event-group bit indicating that the stack has classified persisted network state. */
     static constexpr EventBits_t NETWORK_CLASSIFIED_BIT = BIT3;
+    /** Event-group bit indicating that the stack considers this device factory new. */
     static constexpr EventBits_t FACTORY_NEW_BIT = BIT4;
+    /** Set while no OTA transfer is running, independently of network connectivity. */
+    static constexpr EventBits_t OTA_IDLE_BIT = BIT5;
     /**
      * Supported carbon dioxide publish range in parts per million.
      *
@@ -244,11 +254,16 @@ class ZDevice {
     /** Input that selects whether the device should advertise itself as battery powered. */
     sensors::GpioInput powerSourceBattery{HASS_SENSOR_POWER_SOURCE_GPIO};
     /** Current high-level Zigbee state used by the hardware listener. */
-    std::atomic<ZigbeeDeviceState> deviceState{ZigbeeDeviceState::SETUP};
+    ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
+    /** Serializes awake reasons, device state, sleep permission, and PM-lock transitions. */
+    mutable std::mutex powerStateMutex;
     /** Event group used to wake the main application once Zigbee reconnects. */
     EventGroupHandle_t eventGroup{nullptr};
+    /** FreeRTOS timer that expires the bounded maintenance awake reason. */
     TimerHandle_t maintenanceTimer{nullptr};
+    /** FreeRTOS timer that releases the awake reason for an Identify effect. */
     TimerHandle_t identifyTimer{nullptr};
+    /** Active awake-reason owners used to gate automatic light sleep. */
     app::AwakeReasons awakeReasons{};
     /** Task that receives factory-reset GPIO interrupt notifications. */
     TaskHandle_t factoryResetTask{nullptr};
@@ -283,6 +298,10 @@ class ZDevice {
     static void maintenance_timer_callback(TimerHandle_t timer);
     /** Releases the Identify awake reason when the requested effect duration expires. */
     static void identify_timer_callback(TimerHandle_t timer);
+    /** Expires timed owners under the power-state mutex and re-arms an extended window. */
+    void expire_awake_reason(app::AwakeReason reason, TimerHandle_t timer);
+    /** Starts or stops the Identify awake window under the power-state mutex. */
+    void set_identify_duration(std::chrono::seconds duration);
     /** Wakes the factory-reset task from the configured GPIO edge interrupt. */
     static void factory_reset_button_isr(void* arg);
     /** Returns true while the configured factory-reset input is active. */
@@ -321,7 +340,7 @@ class ZDevice {
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     /** Creates and acquires the PM lock that keeps factory-new or disconnected nodes awake. */
     void init_light_sleep_blocker();
-    /** Updates the PM lock according to the current Zigbee connectivity state. */
+    /** Updates the PM lock; the caller must hold powerStateMutex. */
     void sync_light_sleep_permission();
 #endif
     /** Returns true when the device may currently enter Zigbee-controlled light sleep. */

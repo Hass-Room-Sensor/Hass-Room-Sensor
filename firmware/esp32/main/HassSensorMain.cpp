@@ -19,6 +19,7 @@
 #include "sensors/Battery.hpp"
 #include "sensors/Bme690.hpp"
 #include "sensors/Bme690Mock.hpp"
+#include "zigbee/StackLock.hpp"
 #include "zigbee/ZDevice.hpp"
 
 #include <algorithm>
@@ -164,19 +165,26 @@ void init_power_management() {
 #endif
 }
 
-/**
- * Returns the joined Zigbee session to deep sleep until the next measurement interval.
- */
-[[noreturn]] void schedule_next_wake_and_sleep(const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
-    if (deviceListener) {
-        deviceListener->prepare_for_deep_sleep();
-    }
-    ESP_LOGI(TAG, "Entering deep sleep for %lld seconds.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
-    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(std::chrono::duration_cast<std::chrono::microseconds>(app::RetainedState::WAKE_INTERVAL).count()));
-    esp_deep_sleep_start();
+/** Enters timed deep sleep only after OTA ends, excluding a new OTA start during the transition. */
+[[noreturn]] void start_deep_sleep(std::chrono::microseconds duration, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
     for (;;) {
-        vTaskDelay(portMAX_DELAY);
+        zigbee::ZDevice::get_instance()->wait_for_ota_completion();
+        const zigbee::StackLock stackLock;
+        if (zigbee::ZDevice::get_instance()->is_ota_active()) {
+            continue;
+        }
+        if (deviceListener) {
+            deviceListener->prepare_for_deep_sleep();
+        }
+        ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(duration.count()));
+        esp_deep_sleep_start();
     }
+}
+
+/** Returns the joined Zigbee session to deep sleep until the next measurement interval. */
+[[noreturn]] void schedule_next_wake_and_sleep(const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
+    ESP_LOGI(TAG, "Entering deep sleep for %lld seconds.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
+    start_deep_sleep(app::RetainedState::WAKE_INTERVAL, deviceListener);
 }
 
 /**
@@ -256,15 +264,8 @@ bool wait_for_connection_during_maintenance() {
 [[noreturn]] void schedule_outage_retry(app::RetainedState& retainedState, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
     const auto retryDelay = retainedState.outage_retry_delay();
     retainedState.note_outage_attempt_failed();
-    if (deviceListener) {
-        deviceListener->prepare_for_deep_sleep();
-    }
     ESP_LOGW(TAG, "Zigbee remains disconnected; retrying in %lld minutes.", retryDelay.count());
-    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(std::chrono::duration_cast<std::chrono::microseconds>(retryDelay).count()));
-    esp_deep_sleep_start();
-    for (;;) {
-        vTaskDelay(portMAX_DELAY);
-    }
+    start_deep_sleep(retryDelay, deviceListener);
 }
 
 void mark_running_partition_valid() {
@@ -358,27 +359,19 @@ void mainLoop() {
     app::RetainedState retainedState{};
     app::PeriodicDeadline environmentalDeadline{app::PeriodicDeadline::Clock::now(), app::RetainedState::WAKE_INTERVAL};
 
-    if constexpr (USE_LIGHT_SLEEP) {
-        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
-        zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(!retainedState.is_initial_startup());
-        zigbee::ZDevice::get_instance()->init();
-        const auto startupMaintenance = app::AwakeReasons::startup_maintenance(retainedState.is_timer_wakeup());
-        if (startupMaintenance > std::chrono::seconds::zero()) {
-            zigbee::ZDevice::get_instance()->open_maintenance_window(startupMaintenance);
-        }
-    } else {
-        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
-        zigbee::ZDevice::get_instance()->init();
-        const auto startupMaintenance = app::AwakeReasons::startup_maintenance(retainedState.is_timer_wakeup());
-        if (startupMaintenance > std::chrono::seconds::zero()) {
-            zigbee::ZDevice::get_instance()->open_maintenance_window(startupMaintenance);
-        }
+    zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
+    zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(!retainedState.is_initial_startup());
+    zigbee::ZDevice::get_instance()->init();
+    const auto startupMaintenance = app::AwakeReasons::startup_maintenance(retainedState.is_timer_wakeup());
+    if (startupMaintenance > std::chrono::seconds::zero()) {
+        zigbee::ZDevice::get_instance()->open_maintenance_window(startupMaintenance);
     }
 #if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS) && defined(CONFIG_PM_ENABLE)
     dump_pm_diagnostics();
 #endif
 
     while (true) {
+        zigbee::ZDevice::get_instance()->wait_for_ota_completion();
         if (!ensure_zigbee_connection()) {
             if (wait_for_connection_during_maintenance()) {
                 retainedState.reset_outage_retry();
