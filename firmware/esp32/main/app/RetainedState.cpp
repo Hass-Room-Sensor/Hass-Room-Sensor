@@ -10,6 +10,7 @@ const char* TAG = "RetainedState";
 RetainedState::RetainedState() : storedState_(&state()) {
     const uint32_t wakeupCauses = esp_sleep_get_wakeup_causes();
     const bool resumedFromDeepSleep = (wakeupCauses & (1UL << static_cast<uint32_t>(ESP_SLEEP_WAKEUP_TIMER))) != 0U;
+    timerWakeup_ = resumedFromDeepSleep;
 
     // Reject RTC contents that were never initialized by this firmware instance or belong to an
     // incompatible retained-state layout from an earlier build.
@@ -19,6 +20,7 @@ RetainedState::RetainedState() : storedState_(&state()) {
                 .boot_count = 1,
                 .wake_cycle = 0,
                 .last_battery_report_cycle = 0,
+                .outage_retry_attempt = 0,
                 .initial_report_pending = true,
         };
         ESP_LOGI(TAG, "Initialized retained state storage.");
@@ -50,6 +52,10 @@ bool RetainedState::is_initial_startup() const {
     return storedState_->initial_report_pending;
 }
 
+bool RetainedState::is_timer_wakeup() const {
+    return timerWakeup_;
+}
+
 bool RetainedState::should_report_environment(const models::QuantizedEnvironmentalReadings& readings) const {
     if (storedState_->initial_report_pending) {
         return true;
@@ -78,16 +84,26 @@ bool RetainedState::should_report_environment(const models::QuantizedEnvironment
 }
 
 bool RetainedState::should_report_battery(const models::QuantizedBatteryReading& reading) const {
-    if (storedState_->initial_report_pending) {
-        return true;
+    return BatteryPolicy::should_report(reading.percentage, storedState_->battery_percentage, storedState_->wake_cycle, storedState_->last_battery_report_cycle, storedState_->has_battery, storedState_->initial_report_pending);
+}
+
+bool RetainedState::should_sample_battery() const {
+    return BatteryPolicy::should_sample(storedState_->wake_cycle, storedState_->initial_report_pending);
+}
+
+std::chrono::minutes RetainedState::outage_retry_delay() const {
+    return NetworkRetryPolicy::retry_delay(storedState_->outage_retry_attempt);
+}
+
+void RetainedState::note_outage_attempt_failed() {
+    constexpr uint8_t LAST_RETRY_INDEX = 4;
+    if (storedState_->outage_retry_attempt < LAST_RETRY_INDEX) {
+        ++storedState_->outage_retry_attempt;
     }
-    if (!storedState_->has_battery) {
-        return true;
-    }
-    if (storedState_->battery_percentage != reading.percentage) {
-        return true;
-    }
-    return (storedState_->wake_cycle - storedState_->last_battery_report_cycle) >= BATTERY_REPORT_INTERVAL_CYCLES;
+}
+
+void RetainedState::reset_outage_retry() {
+    storedState_->outage_retry_attempt = 0;
 }
 
 void RetainedState::advance_wake_cycle() {

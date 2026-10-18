@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/AwakeReasons.hpp"
+#include "app/ButtonGesture.hpp"
 #include "defs/DeviceDefs.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
 #include "models/SensorModels.hpp"
@@ -11,7 +13,9 @@
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/timers.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -68,6 +72,12 @@ class ZDevice {
     void init();
     /** Returns true when the Zigbee session is currently connected to a network. */
     [[nodiscard]] bool has_connection() const;
+    /** True while the stack reports this node as factory new rather than commissioned. */
+    [[nodiscard]] bool is_factory_new() const;
+    /** Waits briefly for the Zigbee stack to classify its persisted network state. */
+    [[nodiscard]] bool wait_for_network_classification(std::chrono::milliseconds timeout) const;
+    /** True while an explicit BOOT maintenance window or gesture is holding the device awake. */
+    [[nodiscard]] bool has_explicit_maintenance() const;
     /** Waits until the device rejoins or forms a connection within the given timeout. */
     [[nodiscard]] bool wait_for_connection(std::chrono::milliseconds timeout) const;
     /** Publishes the requested attributes into the already joined Zigbee network. */
@@ -84,6 +94,12 @@ class ZDevice {
 
     /** Erases application and Zigbee state, then reboots as a factory-new device. */
     void reset() const;
+    /** Holds automatic light sleep off while a BOOT gesture is being evaluated. */
+    void set_button_processing(bool active);
+    /** Acquires/releases an independently owned application awake reason. */
+    void set_awake_reason(app::AwakeReason reason, bool active);
+    /** Opens or extends the timed USB maintenance window. */
+    void open_maintenance_window(std::chrono::milliseconds duration);
     /** Updates the externally visible device state. */
     void set_device_state(ZigbeeDeviceState newState);
     /** Marks the current session as connected and wakes any waiter. */
@@ -116,6 +132,10 @@ class ZDevice {
     static constexpr uint8_t DEFAULT_POWER_SOURCE = 0x04;
     /** Event-group bit that signals a successful Zigbee connection for the current wake session. */
     static constexpr EventBits_t CONNECTED_BIT = BIT0;
+    static constexpr EventBits_t MAINTENANCE_ACTIVE_BIT = BIT1;
+    static constexpr EventBits_t BUTTON_ACTIVE_BIT = BIT2;
+    static constexpr EventBits_t NETWORK_CLASSIFIED_BIT = BIT3;
+    static constexpr EventBits_t FACTORY_NEW_BIT = BIT4;
     /**
      * Supported carbon dioxide publish range in parts per million.
      *
@@ -189,6 +209,8 @@ class ZDevice {
     esp_zb_attribute_list_t* co2AttrList{nullptr};
     /** Current carbon dioxide attribute in volumetric fraction units expected by Zigbee. */
     float_t curCo2{std::numeric_limits<float_t>::quiet_NaN()};
+    /** Whether stack-managed CO2 attribute reporting was successfully started. */
+    bool co2ReportingActive{false};
 
     // Debug LED.
     /** On/off light cluster configuration used for the optional debug LED endpoint. */
@@ -218,16 +240,16 @@ class ZDevice {
     // listening for Zigbee state changes and identify effects.
     std::shared_ptr<devices::AbstractDeviceEventListener> deviceListener{nullptr};
     /** Board-specific input used to request a full factory reset. */
-    sensors::GpioInput factoryResetButton{
-            HASS_SENSOR_FACTORY_RESET_GPIO,
-            HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-            HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE};
+    sensors::GpioInput factoryResetButton{HASS_SENSOR_FACTORY_RESET_GPIO, HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE, HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE};
     /** Input that selects whether the device should advertise itself as battery powered. */
     sensors::GpioInput powerSourceBattery{HASS_SENSOR_POWER_SOURCE_GPIO};
     /** Current high-level Zigbee state used by the hardware listener. */
-    ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
+    std::atomic<ZigbeeDeviceState> deviceState{ZigbeeDeviceState::SETUP};
     /** Event group used to wake the main application once Zigbee reconnects. */
     EventGroupHandle_t eventGroup{nullptr};
+    TimerHandle_t maintenanceTimer{nullptr};
+    TimerHandle_t identifyTimer{nullptr};
+    app::AwakeReasons awakeReasons{};
     /** Task that receives factory-reset GPIO interrupt notifications. */
     TaskHandle_t factoryResetTask{nullptr};
     /** True once the Zigbee stack task has been created. */
@@ -257,6 +279,10 @@ class ZDevice {
     static void zb_main_task(void* arg);
     /** Waits for and debounces the board-specific full-factory-reset button. */
     static void factory_reset_button_task(void* arg);
+    /** Expires the bounded maintenance awake reason. */
+    static void maintenance_timer_callback(TimerHandle_t timer);
+    /** Releases the Identify awake reason when the requested effect duration expires. */
+    static void identify_timer_callback(TimerHandle_t timer);
     /** Wakes the factory-reset task from the configured GPIO edge interrupt. */
     static void factory_reset_button_isr(void* arg);
     /** Returns true while the configured factory-reset input is active. */
@@ -310,7 +336,9 @@ class ZDevice {
     /** Updates the in-memory Zigbee pressure attribute. */
     void update_pressure(int16_t pressureDeciKpa);
     /** Updates the in-memory Zigbee carbon dioxide attribute. */
-    void update_co2(uint16_t co2Ppm);
+    [[nodiscard]] bool update_co2(uint16_t co2Ppm);
+    /** Stops/restarts stack-managed CO2 reporting without changing the cluster or stored value. */
+    void set_co2_reporting_active(bool active);
     /** Updates the in-memory Zigbee battery attributes. */
     void update_battery(const models::QuantizedBatteryReading& battery);
 

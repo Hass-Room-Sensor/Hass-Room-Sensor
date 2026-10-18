@@ -31,6 +31,7 @@ class Led {
     // If the LED is on, define the percentage of that time it is actually on to simulate reduced LED brightness.
     uint8_t onDutyPercent{100};
     ledc_channel_t channel{};
+    bool gpioHeld{false};
     // Will be increased every time the LED state changes. Allows the worker thread to sleep until something changed.
     uint64_t stateVersion{0};
 
@@ -57,6 +58,8 @@ class Led {
 
   private:
     void run(std::stop_token st);
+    void release_gpio_hold();
+    void hold_gpio_off();
     void apply_off();
     void apply_on_duty();
     void apply_duty(uint32_t duty);

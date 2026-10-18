@@ -46,17 +46,34 @@ menu "HASS Environment Sensor"
                 Docs: https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c6/index.html
     endchoice
 
-    config HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
-        bool "Enable the mock SCD41 sensor instead of the real one"
-        default n
+    choice HASS_ENVIRONMENT_SENSOR_SCD41_MODE
+        prompt "SCD41 sensor mode"
+        default HASS_ENVIRONMENT_SENSOR_SCD41_DISABLED
         help
-            Useful in case you do not have a real one connected to the device.
+            Select disabled for boards without an SCD41. All Zigbee clusters remain present.
+
+        config HASS_ENVIRONMENT_SENSOR_SCD41_DISABLED
+            bool "Disabled (no sensor fitted)"
+        config HASS_ENVIRONMENT_SENSOR_SCD41_REAL
+            bool "Real SCD41"
+        config HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
+            bool "Mock SCD41 (testing only)"
+    endchoice
 
     config HASS_ENVIRONMENT_SENSOR_BME690_MOCK
         bool "Enable the mock BME690 sensor instead of the real one"
         default n
         help
             Useful in case you do not have a real one connected to the device.
+
+    config HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS
+        bool "Print power-management lock and sleep diagnostics"
+        default n
+        help
+            Dumps ESP-IDF power-management locks after Zigbee initialization and after each
+            scheduled idle interval. Also enable CONFIG_PM_PROFILING to report light-sleep
+            residency and lock-held time. Enable only for debugging; a connected USB console
+            affects power measurements.
 
     choice HASS_ENVIRONMENT_SENSOR_SLEEP_MODE
         prompt "ESP sleep mode between measurement cycles"

@@ -1,0 +1,4 @@
+# Allow USB Serial/JTAG to follow normal light-sleep behavior when connected to a host.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=n
+# ESP32-C6 supports peripheral power-down during automatic light sleep.
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y

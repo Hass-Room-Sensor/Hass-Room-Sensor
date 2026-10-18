@@ -31,6 +31,9 @@ Led::~Led() {
 
 void Led::init() {
     // Configure GPIO and set it to an off state while PWM is prepared.
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+    ESP_ERROR_CHECK(gpio_hold_dis(gpio));
+#endif
     gpio_reset_pin(gpio);
     gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
     gpio_set_level(gpio, lowActive ? 1 : 0);
@@ -44,6 +47,9 @@ void Led::init() {
     channelConf.timer_sel = PWM_TIMER;
     channelConf.duty = 0;
     channelConf.hpoint = 0;
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+    channelConf.sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_ALLOW_PD;
+#endif
     ESP_ERROR_CHECK(ledc_channel_config(&channelConf));
 
     apply_off();
@@ -203,7 +209,9 @@ void Led::run(std::stop_token st) {
 
 void Led::apply_off() {
     const uint32_t idleLevel = lowActive ? 1u : 0u;
+    release_gpio_hold();
     ESP_ERROR_CHECK(ledc_stop(PWM_MODE, channel, idleLevel));
+    hold_gpio_off();
 }
 
 void Led::apply_on_duty() {
@@ -211,8 +219,27 @@ void Led::apply_on_duty() {
 }
 
 void Led::apply_duty(uint32_t duty) {
+    release_gpio_hold();
     ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, channel, duty));
     ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, channel));
+}
+
+void Led::release_gpio_hold() {
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+    if (gpioHeld) {
+        ESP_ERROR_CHECK(gpio_hold_dis(gpio));
+        gpioHeld = false;
+    }
+#endif
+}
+
+void Led::hold_gpio_off() {
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+    if (!gpioHeld) {
+        ESP_ERROR_CHECK(gpio_hold_en(gpio));
+        gpioHeld = true;
+    }
+#endif
 }
 
 uint32_t Led::compute_on_duty_ticks() const {

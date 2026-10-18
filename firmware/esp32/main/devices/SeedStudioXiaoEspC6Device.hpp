@@ -3,7 +3,6 @@
 #include "actuators/Led.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
 #include "esp_timer.h"
-#include <memory>
 #include <mutex>
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_DEVICE_TARGET_SEED_STUDIO_XIAO_ESPC6
@@ -19,9 +18,8 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     actuators::Led redLed;
     actuators::Led greenLed;
 
-    std::mutex statusLedMutex{};
+    std::mutex statusLedMutex;
     esp_timer_handle_t identifyRestoreTimer{nullptr};
-    bool sleepIndicatorActive{false};
     bool identifyActive{false};
 
   public:
@@ -38,7 +36,6 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     [[nodiscard]] bool has_debug_led() const override;
     [[nodiscard]] bool is_debug_led_enabled() const override;
     void set_debug_led(bool enabled) override;
-    void set_sleep_indicator(bool sleeping) override;
     void prepare_for_deep_sleep() override;
     void indicate_error() override;
 

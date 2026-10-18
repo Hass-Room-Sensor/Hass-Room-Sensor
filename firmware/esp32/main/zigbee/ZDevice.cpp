@@ -17,6 +17,7 @@
 #include "esp_zigbee_type.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "platform/esp_zigbee_platform.h"
 #include "zcl/esp_zigbee_zcl_carbon_dioxide_measurement.h"
 #include "zcl/esp_zigbee_zcl_command.h"
 #include "zcl/esp_zigbee_zcl_common.h"
@@ -67,6 +68,14 @@ void ZDevice::init() {
         eventGroup = xEventGroupCreate();
         assert(eventGroup != nullptr);
     }
+    if (maintenanceTimer == nullptr) {
+        maintenanceTimer = xTimerCreate("maintenance", pdMS_TO_TICKS(60000), pdFALSE, this, maintenance_timer_callback);
+        assert(maintenanceTimer != nullptr);
+    }
+    if (identifyTimer == nullptr) {
+        identifyTimer = xTimerCreate("identify", pdMS_TO_TICKS(1000), pdFALSE, this, identify_timer_callback);
+        assert(identifyTimer != nullptr);
+    }
 
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     init_light_sleep_blocker();
@@ -81,9 +90,11 @@ void ZDevice::init() {
     }
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
+#if !defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
     const gpio_int_type_t resetWakeLevel = HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL;
     ESP_ERROR_CHECK(gpio_wakeup_enable(HASS_SENSOR_FACTORY_RESET_GPIO, resetWakeLevel));
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+#endif
 #endif
 
     esp_zb_platform_config_t config = {};
@@ -95,8 +106,7 @@ void ZDevice::init() {
     xTaskCreate(ZDevice::factory_reset_button_task, "factory_reset", 2048, this, 5, &factoryResetTask);
     assert(factoryResetTask != nullptr);
 
-    const gpio_int_type_t resetInterrupt = HASS_SENSOR_FACTORY_RESET_LOW_ACTIVE ? GPIO_INTR_NEGEDGE : GPIO_INTR_POSEDGE;
-    ESP_ERROR_CHECK(gpio_set_intr_type(HASS_SENSOR_FACTORY_RESET_GPIO, resetInterrupt));
+    ESP_ERROR_CHECK(gpio_set_intr_type(HASS_SENSOR_FACTORY_RESET_GPIO, GPIO_INTR_ANYEDGE));
     const esp_err_t isrServiceResult = gpio_install_isr_service(0);
     if (isrServiceResult != ESP_OK && isrServiceResult != ESP_ERR_INVALID_STATE) {
         ESP_ERROR_CHECK(isrServiceResult);
@@ -109,9 +119,75 @@ bool ZDevice::has_connection() const {
     return eventGroup != nullptr && (xEventGroupGetBits(eventGroup) & CONNECTED_BIT) != 0;
 }
 
+bool ZDevice::is_factory_new() const {
+    return eventGroup != nullptr && (xEventGroupGetBits(eventGroup) & FACTORY_NEW_BIT) != 0;
+}
+
+bool ZDevice::wait_for_network_classification(std::chrono::milliseconds timeout) const {
+    if (eventGroup == nullptr) {
+        return false;
+    }
+    const EventBits_t bits = xEventGroupWaitBits(eventGroup, NETWORK_CLASSIFIED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
+    return (bits & NETWORK_CLASSIFIED_BIT) != 0;
+}
+
+bool ZDevice::has_explicit_maintenance() const {
+    if (eventGroup == nullptr) {
+        return false;
+    }
+    constexpr EventBits_t EXPLICIT_MAINTENANCE_BITS = MAINTENANCE_ACTIVE_BIT | BUTTON_ACTIVE_BIT;
+    return (xEventGroupGetBits(eventGroup) & EXPLICIT_MAINTENANCE_BITS) != 0;
+}
+
 bool ZDevice::wait_for_connection(std::chrono::milliseconds timeout) const {
     const EventBits_t bits = xEventGroupWaitBits(eventGroup, CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout.count()));
     return (bits & CONNECTED_BIT) != 0;
+}
+
+void ZDevice::set_button_processing(bool active) {
+    set_awake_reason(app::AwakeReason::BUTTON, active);
+    if (eventGroup != nullptr) {
+        if (active)
+            xEventGroupSetBits(eventGroup, BUTTON_ACTIVE_BIT);
+        else
+            xEventGroupClearBits(eventGroup, BUTTON_ACTIVE_BIT);
+    }
+}
+
+void ZDevice::set_awake_reason(app::AwakeReason reason, bool active) {
+    awakeReasons.set(reason, active);
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    sync_light_sleep_permission();
+#endif
+}
+
+void ZDevice::open_maintenance_window(std::chrono::milliseconds duration) {
+    awakeReasons.set_maintenance_until(app::AwakeReasons::Clock::now() + duration);
+    if (eventGroup != nullptr) {
+        xEventGroupSetBits(eventGroup, MAINTENANCE_ACTIVE_BIT);
+    }
+#if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
+    sync_light_sleep_permission();
+#endif
+    if (maintenanceTimer == nullptr)
+        return;
+    const auto ticks = std::max<TickType_t>(1, pdMS_TO_TICKS(duration.count()));
+    ESP_ERROR_CHECK(xTimerChangePeriod(maintenanceTimer, ticks, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+}
+
+void ZDevice::maintenance_timer_callback(TimerHandle_t timer) {
+    auto* device = static_cast<ZDevice*>(pvTimerGetTimerID(timer));
+    assert(device != nullptr);
+    device->set_awake_reason(app::AwakeReason::MAINTENANCE, false);
+    if (device->eventGroup != nullptr) {
+        xEventGroupClearBits(device->eventGroup, MAINTENANCE_ACTIVE_BIT);
+    }
+}
+
+void ZDevice::identify_timer_callback(TimerHandle_t timer) {
+    auto* device = static_cast<ZDevice*>(pvTimerGetTimerID(timer));
+    assert(device != nullptr);
+    device->set_awake_reason(app::AwakeReason::IDENTIFY, false);
 }
 
 void ZDevice::set_connected_light_sleep_allowed(bool allowed) {
@@ -144,11 +220,13 @@ void ZDevice::sync_light_sleep_permission() {
         return;
     }
 
-    const bool shouldBlockLightSleep = deviceState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed;
+    awakeReasons.expire(app::AwakeReasons::Clock::now());
+    const ZigbeeDeviceState currentState = deviceState.load(std::memory_order_acquire);
+    const bool shouldBlockLightSleep = currentState != ZigbeeDeviceState::CONNECTED || !connectedLightSleepAllowed || awakeReasons.any();
     if (shouldBlockLightSleep && !lightSleepBlocked) {
         ESP_ERROR_CHECK(esp_pm_lock_acquire(noLightSleepLock));
         lightSleepBlocked = true;
-        if (deviceState == ZigbeeDeviceState::CONNECTED) {
+        if (currentState == ZigbeeDeviceState::CONNECTED) {
             ESP_LOGI(TAG, "Blocking ESP light sleep while the initial Zigbee commissioning window is still active.");
         } else {
             ESP_LOGI(TAG, "Blocking ESP light sleep until the Zigbee network is joined.");
@@ -176,15 +254,9 @@ void ZDevice::handle_can_sleep_signal() {
         return;
     }
 
-    if (deviceListener) {
-        ESP_LOGI(TAG, "Sleeping....");
-        deviceListener->set_sleep_indicator(true);
-    }
+    ESP_LOGD(TAG, "Zigbee stack entering sleep.");
     esp_zb_sleep_now();
-    if (deviceListener) {
-        ESP_LOGI(TAG, "Woke up");
-        deviceListener->set_sleep_indicator(false);
-    }
+    ESP_LOGD(TAG, "Zigbee stack woke.");
 #endif
 }
 
@@ -200,12 +272,37 @@ void ZDevice::publish(const PublishRequest& request) {
             update_pressure(*request.environmental->pressure_deci_kpa);
         }
         if (request.environmental->co2_ppm) {
-            update_co2(*request.environmental->co2_ppm);
+            if (update_co2(*request.environmental->co2_ppm)) {
+                set_co2_reporting_active(true);
+            } else {
+                set_co2_reporting_active(false);
+            }
+        } else {
+            set_co2_reporting_active(false);
         }
     }
 
     if (request.battery) {
         update_battery(*request.battery);
+    }
+}
+
+void ZDevice::set_co2_reporting_active(bool active) {
+    if (active && co2ReportingActive)
+        return;
+    const esp_zb_zcl_attr_location_info_t attrInfo{
+            .endpoint_id = DEFAULT_ENDPOINT_ID.endpoint,
+            .cluster_id = ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT,
+            .cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+            .manuf_code = 0,
+            .attr_id = ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID,
+    };
+    const esp_err_t result = active ? esp_zb_zcl_start_attr_reporting(attrInfo) : esp_zb_zcl_stop_attr_reporting(attrInfo);
+    if (result == ESP_OK) {
+        co2ReportingActive = active;
+    } else if (active || result != ESP_FAIL) {
+        ESP_LOGW(TAG, "Could not %s automatic CO2 reporting: %s.", active ? "resume" : "pause", esp_err_to_name(result));
+        co2ReportingActive = false;
     }
 }
 
@@ -226,13 +323,37 @@ void ZDevice::factory_reset_button_task(void* arg) {
     auto* device = static_cast<ZDevice*>(arg);
     assert(device != nullptr);
 
-    constexpr std::chrono::milliseconds DEBOUNCE_TIME{100};
+    using Clock = app::ButtonGesture::Clock;
+    app::ButtonGesture gesture{device->is_factory_reset_button_pressed()};
 
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        vTaskDelay(pdMS_TO_TICKS(DEBOUNCE_TIME.count()));
-        if (device->is_factory_reset_button_pressed()) {
-            device->reset();
+        // Any edge restarts the 50 ms debounce period.
+        while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) != 0) {
+        }
+        auto event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
+        if (event == app::ButtonGesture::Event::PRESSED) {
+            device->set_button_processing(true);
+            const auto holdStarted = Clock::now();
+            while (gesture.is_pressed()) {
+                const auto elapsed = Clock::duration(Clock::now() - holdStarted);
+                const auto remaining = std::chrono::seconds{10} - elapsed;
+                const TickType_t waitTicks = remaining <= Clock::duration::zero() ? 0 : pdMS_TO_TICKS(std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
+                const bool edge = ulTaskNotifyTake(pdTRUE, waitTicks) != 0;
+                if (edge) {
+                    while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50)) != 0) {
+                    }
+                    event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
+                } else {
+                    event = gesture.update(device->is_factory_reset_button_pressed(), Clock::now());
+                }
+                if (event == app::ButtonGesture::Event::FACTORY_RESET)
+                    device->reset();
+                if (event == app::ButtonGesture::Event::SHORT_PRESS) {
+                    device->open_maintenance_window(app::AwakeReasons::short_press_maintenance);
+                    device->set_button_processing(false);
+                }
+            }
         }
     }
 }
@@ -284,10 +405,10 @@ void ZDevice::update_pressure(int16_t pressureDeciKpa) {
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID, static_cast<void*>(&curPressure), false));
 }
 
-void ZDevice::update_co2(uint16_t co2Ppm) {
+bool ZDevice::update_co2(uint16_t co2Ppm) {
     if (co2Ppm < CO2_MIN_PPM || co2Ppm > CO2_MAX_PPM) {
         ESP_LOGW(TAG, "Skipping CO2 publish: %u ppm is outside Zigbee cluster range [%u, %u] ppm.", co2Ppm, CO2_MIN_PPM, CO2_MAX_PPM);
-        return;
+        return false;
     }
 
     // Calculation based on: https://www.rapidtables.com/convert/number/PPM_to_Percent.html
@@ -295,7 +416,9 @@ void ZDevice::update_co2(uint16_t co2Ppm) {
     const esp_err_t err = esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, static_cast<void*>(&curCo2), false);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to update CO2 attribute for %u ppm: %s.", co2Ppm, esp_err_to_name(err));
+        return false;
     }
+    return true;
 }
 
 void ZDevice::update_battery(const models::QuantizedBatteryReading& battery) {
@@ -304,9 +427,6 @@ void ZDevice::update_battery(const models::QuantizedBatteryReading& battery) {
 
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, static_cast<void*>(&curBatteryPercentage), false));
     ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, static_cast<void*>(&curBatteryMv), false));
-    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, static_cast<void*>(&curBatterySize), false));
-    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_A_HR_RATING_ID, static_cast<void*>(&curBatteryMAhRating), false));
-    ESP_ERROR_CHECK(esp_zb_zcl_set_attribute_val(DEFAULT_ENDPOINT_ID.endpoint, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_RATED_VOLTAGE_ID, static_cast<void*>(&curBatteryRatedVoltage), false));
 }
 
 void ZDevice::zb_main_task(void* /*arg*/) {
@@ -335,8 +455,11 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     networkConfig.esp_zb_role = ESP_ZB_DEVICE_TYPE_ED;
     networkConfig.install_code_policy = false;
     networkConfig.nwk_cfg.zed_cfg.ed_timeout = ESP_ZB_ED_AGING_TIMEOUT_64MIN;
-    networkConfig.nwk_cfg.zed_cfg.keep_alive = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(5)).count(); // Wake up from sleep every 5 seconds to send a keep alive via ZigBee
+    networkConfig.nwk_cfg.zed_cfg.keep_alive = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(5)).count(); // Stack keep-alive timeout; long-poll cadence is configured separately below.
     esp_zb_init(&networkConfig);
+    // Use a 3-second normal poll interval. The stack keeps its shorter fast-poll behavior
+    // while completing active exchanges.
+    esp_zb_set_default_long_poll_interval(3000);
     ESP_LOGD(TAG, "esp_zb_init.");
 
     esp_zb_cluster_list_t* clusterList = device.setup_temp_sensor();
@@ -409,8 +532,18 @@ esp_err_t ZDevice::on_attr_changed(const esp_zb_zcl_set_attr_value_message_t* me
             identifyTime = *static_cast<uint16_t*>(message->attribute.data.value);
         }
 
-        if (ZDevice::get_instance()->deviceListener) {
-            ZDevice::get_instance()->deviceListener->on_identify(identifyTime);
+        ZDevice& device = *ZDevice::get_instance();
+        if (identifyTime > 0) {
+            device.set_awake_reason(app::AwakeReason::IDENTIFY, true);
+            const TickType_t identifyTicks = std::max<TickType_t>(1, pdMS_TO_TICKS(static_cast<uint32_t>(identifyTime) * 1000U));
+            ESP_ERROR_CHECK(xTimerChangePeriod(device.identifyTimer, identifyTicks, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+        } else {
+            ESP_ERROR_CHECK(xTimerStop(device.identifyTimer, 0) == pdPASS ? ESP_OK : ESP_FAIL);
+            device.set_awake_reason(app::AwakeReason::IDENTIFY, false);
+        }
+
+        if (device.deviceListener) {
+            device.deviceListener->on_identify(identifyTime);
         }
         return ESP_OK;
     }
@@ -583,7 +716,9 @@ void ZDevice::setup_ota_cluster() {
     otaCfg.ota_upgrade_image_type = OTA_IMAGE_TYPE;
 
     otaAttrList = esp_zb_ota_cluster_create(&otaCfg);
-    otaClientCfg.timer_query = 1;
+    // The SDK's default query cadence is 24 * 60 minutes. The previous value of 1 caused
+    // needless minute-level discovery traffic.
+    otaClientCfg.timer_query = ESP_ZB_ZCL_OTA_UPGRADE_QUERY_TIMER_COUNT_DEF;
     otaClientCfg.hw_version = 1;
     otaClientCfg.max_data_size = 223;
 
@@ -667,23 +802,26 @@ void ZDevice::setup_battery_cluster() {
 }
 
 void ZDevice::set_device_state(ZigbeeDeviceState newState) {
-    if (deviceState == newState) {
+    const ZigbeeDeviceState previousState = deviceState.exchange(newState, std::memory_order_acq_rel);
+    if (previousState == newState) {
         return;
     }
 
-    deviceState = newState;
+    awakeReasons.set(app::AwakeReason::COMMISSIONING, newState == ZigbeeDeviceState::SETUP);
+    awakeReasons.set(app::AwakeReason::RECOVERY, newState == ZigbeeDeviceState::CONNECTING);
+    awakeReasons.set(app::AwakeReason::OTA, newState == ZigbeeDeviceState::OTA);
 #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP)
     sync_light_sleep_permission();
 #endif
     if (eventGroup) {
-        if (deviceState == ZigbeeDeviceState::CONNECTED) {
+        if (newState == ZigbeeDeviceState::CONNECTED) {
             xEventGroupSetBits(eventGroup, CONNECTED_BIT);
         } else {
             xEventGroupClearBits(eventGroup, CONNECTED_BIT);
         }
     }
     if (deviceListener) {
-        deviceListener->on_device_state_changed(deviceState);
+        deviceListener->on_device_state_changed(newState);
     }
 }
 
@@ -713,8 +851,16 @@ void ZDevice::handle_app_signal(esp_zb_app_signal_t* signalStruct) {
         case ESP_ZB_BDB_SIGNAL_DEVICE_FIRST_START:
         case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
             if (errorStatus == ESP_OK) {
-                ESP_LOGI(TAG, "Device state: %s", esp_zb_bdb_is_factory_new() ? "factory new" : "configured");
-                if (esp_zb_bdb_is_factory_new()) {
+                const bool factoryNew = esp_zb_bdb_is_factory_new();
+                if (eventGroup != nullptr) {
+                    xEventGroupClearBits(eventGroup, FACTORY_NEW_BIT);
+                    if (factoryNew) {
+                        xEventGroupSetBits(eventGroup, FACTORY_NEW_BIT);
+                    }
+                    xEventGroupSetBits(eventGroup, NETWORK_CLASSIFIED_BIT);
+                }
+                ESP_LOGI(TAG, "Device state: %s", factoryNew ? "factory new" : "configured");
+                if (factoryNew) {
                     set_device_state(ZigbeeDeviceState::SETUP);
                     ESP_LOGI(TAG, "Scanning for available Zigbee networks and joining one that's open to new devices...");
                     schedule_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);

@@ -54,6 +54,12 @@ void SeedStudioXiaoEspC6Device::init() {
     gpio_set_direction(gpio_num_t::GPIO_NUM_14, GPIO_MODE_OUTPUT);
     gpio_set_level(gpio_num_t::GPIO_NUM_14, HASS_SENSOR_ANTENNA_EXTERNAL ? 1 : 0);
 
+#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP)
+    // GPIO/IOMUX powers down in the battery profile; retain the fixed radio routing levels.
+    ESP_ERROR_CHECK(gpio_hold_en(gpio_num_t::GPIO_NUM_3));
+    ESP_ERROR_CHECK(gpio_hold_en(gpio_num_t::GPIO_NUM_14));
+#endif
+
     ESP_LOGI(TAG, "Antenna mode: %s", ::HASS_SENSOR_ANTENNA_EXTERNAL ? "external" : "internal");
 }
 
@@ -108,19 +114,10 @@ bool SeedStudioXiaoEspC6Device::is_debug_led_enabled() const {
 
 void SeedStudioXiaoEspC6Device::set_debug_led(bool /*enabled*/) {}
 
-void SeedStudioXiaoEspC6Device::set_sleep_indicator(bool sleeping) {
-    {
-        const std::scoped_lock lock(statusLedMutex);
-        sleepIndicatorActive = sleeping;
-    }
-    refresh_status_led();
-}
-
 void SeedStudioXiaoEspC6Device::prepare_for_deep_sleep() {
     stop_identify_effect();
     {
         const std::scoped_lock lock(statusLedMutex);
-        sleepIndicatorActive = true;
         identifyActive = false;
     }
     statusLed.set_off();
@@ -133,22 +130,16 @@ void SeedStudioXiaoEspC6Device::indicate_error() {
 
 void SeedStudioXiaoEspC6Device::refresh_status_led() {
     bool identifyActive = false;
-    bool sleepIndicatorActive = false;
     {
         const std::scoped_lock lock(statusLedMutex);
         identifyActive = this->identifyActive;
-        sleepIndicatorActive = this->sleepIndicatorActive;
     }
 
     if (identifyActive) {
         return;
     }
 
-    if (sleepIndicatorActive) {
-        statusLed.set_on();
-    } else {
-        statusLed.set_off();
-    }
+    statusLed.set_off();
 }
 
 void SeedStudioXiaoEspC6Device::stop_identify_effect() {

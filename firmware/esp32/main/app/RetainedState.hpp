@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/BatteryPolicy.hpp"
+#include "app/NetworkRetryPolicy.hpp"
 #include "esp_sleep.h"
 #include "models/SensorModels.hpp"
 
@@ -35,6 +37,8 @@ class RetainedState {
      * Returns true until the first successful publish after power-on or reset.
      */
     [[nodiscard]] bool is_initial_startup() const;
+    /** True when this application start followed the firmware's timed deep-sleep wake. */
+    [[nodiscard]] bool is_timer_wakeup() const;
     /**
      * Returns true when the current wake cycle should publish environmental data.
      *
@@ -46,6 +50,14 @@ class RetainedState {
      * Returns true on initial startup, when the battery percentage changed, or once per day.
      */
     [[nodiscard]] bool should_report_battery(const models::QuantizedBatteryReading& reading) const;
+    /** Returns true at startup and once per hour for a battery ADC conversion. */
+    [[nodiscard]] bool should_sample_battery() const;
+    /** Delay before the next timer-based retry after a failed network attempt. */
+    [[nodiscard]] std::chrono::minutes outage_retry_delay() const;
+    /** Records a failed network attempt, retaining the backoff step over deep sleep. */
+    void note_outage_attempt_failed();
+    /** Clears outage backoff after the Zigbee network is recovered. */
+    void reset_outage_retry();
     /**
      * Advances the retained wake-cycle counter for long-lived runtime modes such as light sleep.
      */
@@ -85,6 +97,8 @@ class RetainedState {
         uint32_t wake_cycle{};
         /** Wake-cycle counter recorded when the last battery report was sent successfully. */
         uint32_t last_battery_report_cycle{};
+        /** Number of consecutive failed network attempts, capped by the retry policy. */
+        uint8_t outage_retry_attempt{};
         /** True until the first successful report after a cold boot or non-deep-sleep restart. */
         bool initial_report_pending{true};
 
@@ -134,9 +148,10 @@ class RetainedState {
      * RTC contents unsafe to reuse. The practical effect is that the next boot will treat RTC memory as
      * uninitialized, discard the previous retained values, and start with a fresh startup report.
      */
-    static constexpr uint32_t VERSION = 0x42424242U;
+    static constexpr uint32_t VERSION = 0x42424343U;
 
     /** Pointer to the RTC-retained backing store used by this wake cycle. */
     StoredState* storedState_{nullptr};
+    bool timerWakeup_{false};
 };
 } // namespace app

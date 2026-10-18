@@ -1,3 +1,4 @@
+#include "app/PeriodicDeadline.hpp"
 #include "app/RetainedState.hpp"
 #include "defs/DeviceDefs.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
@@ -5,6 +6,7 @@
 #include "esp_log.h"
 #include "esp_log_level.h"
 #include "esp_ota_ops.h"
+#include "models/EnvironmentalSource.hpp"
 #ifdef CONFIG_PM_ENABLE
 #include "esp_pm.h"
 #endif
@@ -22,13 +24,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <thread>
 
-#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
+#if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK)
 #include "sensors/Scd41Mock.hpp"
-#else
+#elif defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_REAL)
 #include "sensors/Scd41.hpp"
 #endif
 
@@ -46,9 +49,6 @@ constexpr std::chrono::seconds SESSION_SETTLE_TIME{2};
 // Keep the device fully awake after the first successful join so Home Assistant can complete the
 // initial interview before the sleepy end device starts using automatic ESP light sleep again.
 constexpr std::chrono::minutes INITIAL_INTERVIEW_AWAKE_TIME{1};
-// First boot may need a much longer join window than normal wake-up reports.
-constexpr std::chrono::minutes INITIAL_JOIN_TIMEOUT{5};
-constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
 
 /**
  * Reads the battery voltage once and maps it into a coarse percentage for reporting.
@@ -98,6 +98,10 @@ constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
  * Collects one single-shot SCD41 measurement and forwards ambient pressure compensation when available.
  */
 [[nodiscard]] std::optional<sensors::measurement_t> read_scd41(std::optional<uint16_t> pressureHpa) {
+#ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_DISABLED
+    static_cast<void>(pressureHpa);
+    return std::nullopt;
+#else
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK
     std::unique_ptr<sensors::AbstractScd41> sensor = std::make_unique<sensors::Scd41Mock>();
 #else
@@ -110,6 +114,7 @@ constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
     }
 
     return sensor->read_single_shot(pressureHpa);
+#endif
 }
 
 /**
@@ -119,23 +124,24 @@ constexpr std::chrono::seconds REJOIN_TIMEOUT{20};
  * command path for a more accurate CO2 reading.
  */
 [[nodiscard]] models::EnvironmentalReadings collect_environmental_readings() {
-    models::EnvironmentalReadings readings{};
+    models::EnvironmentalReadings bmeReadings{};
 
     const std::optional<sensors::bme690_measurement_t> bme690 = read_bme690();
     if (bme690) {
-        readings.pressure_hpa = bme690->pressure_hpa;
-        readings.temperature_celsius = bme690->temp_celsius;
-        readings.humidity_percent = bme690->humidity_percent;
+        bmeReadings.pressure_hpa = bme690->pressure_hpa;
+        bmeReadings.temperature_celsius = bme690->temp_celsius;
+        bmeReadings.humidity_percent = bme690->humidity_percent;
     }
 
     const std::optional<sensors::measurement_t> scd41 = read_scd41(bme690 ? std::make_optional(static_cast<uint16_t>(std::lround(bme690->pressure_hpa))) : std::nullopt);
+    models::EnvironmentalReadings scdReadings{};
     if (scd41) {
-        readings.co2_ppm = scd41->co2;
-        readings.temperature_celsius = scd41->temp;
-        readings.humidity_percent = scd41->hum;
+        scdReadings.co2_ppm = scd41->co2;
+        scdReadings.temperature_celsius = scd41->temp;
+        scdReadings.humidity_percent = scd41->hum;
     }
 
-    return readings;
+    return models::select_environmental_sources(bmeReadings, scdReadings);
 }
 
 /**
@@ -192,9 +198,12 @@ void free_rtos_sleep(const std::chrono::duration<Rep, Period> d) {
  * Blocks the application task until the next scheduled measurement cycle while the Zigbee stack
  * remains joined and can use automatic light sleep between polls.
  */
-void wait_for_next_cycle_light_sleep() {
-    ESP_LOGI(TAG, "Waiting %lld seconds before the next measurement cycle while Zigbee stays joined.", std::chrono::duration_cast<std::chrono::seconds>(app::RetainedState::WAKE_INTERVAL).count());
-    free_rtos_sleep(app::RetainedState::WAKE_INTERVAL);
+void wait_for_next_cycle_light_sleep(app::PeriodicDeadline& deadline) {
+    const auto now = app::PeriodicDeadline::Clock::now();
+    if (now < deadline.next()) {
+        free_rtos_sleep(std::chrono::duration_cast<std::chrono::milliseconds>(deadline.next() - now));
+    }
+    deadline.advance_past(app::PeriodicDeadline::Clock::now());
 }
 
 #ifdef CONFIG_HASS_ENVIRONMENT_SENSOR_SLEEP_MODE_LIGHT_SLEEP
@@ -208,33 +217,54 @@ void keep_awake_for_initial_interview() {
 #endif
 
 /**
- * Keeps the application awake until Zigbee finishes joining or rejoining a network.
- *
- * The Zigbee stack already retries commissioning internally. This helper only prevents the main
- * application from entering its normal timed sleep path while the device is still factory new or
- * otherwise disconnected from the mesh.
- */
-void wait_until_connected_awake() {
-    constexpr std::chrono::seconds LOG_INTERVAL{30};
-    ESP_LOGW(TAG, "Zigbee is not connected. Sleep is disabled until the device joins a network.");
-    while (!zigbee::ZDevice::get_instance()->has_connection()) {
-        if (zigbee::ZDevice::get_instance()->wait_for_connection(LOG_INTERVAL)) {
-            return;
-        }
-        ESP_LOGI(TAG, "Still waiting for a Zigbee connection before entering the configured sleep mode.");
-    }
-}
-
-/**
  * Waits for a connected Zigbee session if the current cycle needs to publish data.
  */
-[[nodiscard]] bool ensure_zigbee_connection(const app::RetainedState& retainedState) {
-    if (zigbee::ZDevice::get_instance()->has_connection()) {
+[[nodiscard]] bool ensure_zigbee_connection() {
+    zigbee::ZDevice& device = *zigbee::ZDevice::get_instance();
+    if (device.has_connection()) {
         return true;
     }
 
-    const auto joinTimeout = retainedState.is_initial_startup() ? INITIAL_JOIN_TIMEOUT : REJOIN_TIMEOUT;
-    return zigbee::ZDevice::get_instance()->wait_for_connection(joinTimeout);
+    // The BDB first-start/reboot signal is the authoritative source for whether this device has
+    // stored network credentials. Allow the Zigbee task to deliver it before selecting a timeout.
+    constexpr std::chrono::seconds NETWORK_CLASSIFICATION_TIMEOUT{5};
+    if (!device.wait_for_network_classification(NETWORK_CLASSIFICATION_TIMEOUT)) {
+        ESP_LOGW(TAG, "Zigbee network state was not classified in time; using the commissioned retry timeout.");
+    }
+    const bool factoryNew = device.is_factory_new();
+    const std::chrono::milliseconds attemptTimeout = app::NetworkRetryPolicy::attempt_timeout(factoryNew);
+    ESP_LOGW(TAG, "Waiting up to %lld seconds for the %s Zigbee connection attempt.", std::chrono::duration_cast<std::chrono::seconds>(attemptTimeout).count(), factoryNew ? "factory-new" : "commissioned");
+    return device.wait_for_connection(attemptTimeout);
+}
+
+/**
+ * Keeps the awake retry alive only while an explicit BOOT maintenance gesture/window is active.
+ */
+bool wait_for_connection_during_maintenance() {
+    zigbee::ZDevice& device = *zigbee::ZDevice::get_instance();
+    while (device.has_explicit_maintenance()) {
+        if (device.wait_for_connection(std::chrono::seconds{1})) {
+            return true;
+        }
+    }
+    return device.has_connection();
+}
+
+/**
+ * Backs off with RTC-retained state while the device has no usable Zigbee parent/coordinator.
+ */
+[[noreturn]] void schedule_outage_retry(app::RetainedState& retainedState, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
+    const auto retryDelay = retainedState.outage_retry_delay();
+    retainedState.note_outage_attempt_failed();
+    if (deviceListener) {
+        deviceListener->prepare_for_deep_sleep();
+    }
+    ESP_LOGW(TAG, "Zigbee remains disconnected; retrying in %lld minutes.", retryDelay.count());
+    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(std::chrono::duration_cast<std::chrono::microseconds>(retryDelay).count()));
+    esp_deep_sleep_start();
+    for (;;) {
+        vTaskDelay(portMAX_DELAY);
+    }
 }
 
 void mark_running_partition_valid() {
@@ -254,13 +284,22 @@ void init_nvs() {
     ESP_ERROR_CHECK(err);
 }
 
+#if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS) && defined(CONFIG_PM_ENABLE)
+/** Prints cumulative PM lock and sleep statistics for the current boot. */
+void dump_pm_diagnostics() {
+    if (esp_pm_dump_locks(stdout) != ESP_OK) {
+        ESP_LOGW(TAG, "Could not dump power-management diagnostics.");
+    }
+}
+#endif
+
 /**
  * Executes one sensor-measurement and optional Zigbee publish cycle.
  */
 void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
     const models::EnvironmentalReadings environmentalReadings = collect_environmental_readings();
     const models::QuantizedEnvironmentalReadings quantizedEnvironmental = models::quantize(environmentalReadings);
-    const std::optional<models::BatteryReading> batteryReading = read_battery();
+    const std::optional<models::BatteryReading> batteryReading = retainedState.should_sample_battery() ? read_battery() : std::nullopt;
     const std::optional<models::QuantizedBatteryReading> quantizedBattery = batteryReading ? std::make_optional(models::quantize(*batteryReading)) : std::nullopt;
 
     // Temperature and humidity are refreshed on every wake; pressure and CO2 still rely on change detection.
@@ -279,16 +318,6 @@ void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_
     }
     if (shouldReportBattery && quantizedBattery) {
         publishRequest.battery = *quantizedBattery;
-    }
-
-    if constexpr (!USE_LIGHT_SLEEP) {
-        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
-        zigbee::ZDevice::get_instance()->init();
-    }
-
-    if (!ensure_zigbee_connection(retainedState)) {
-        ESP_LOGW(TAG, "Zigbee network is not available in this measurement cycle.");
-        return;
     }
 
     zigbee::ZDevice::get_instance()->publish(publishRequest);
@@ -327,23 +356,54 @@ void mainLoop() {
     deviceListener->init();
 
     app::RetainedState retainedState{};
+    app::PeriodicDeadline environmentalDeadline{app::PeriodicDeadline::Clock::now(), app::RetainedState::WAKE_INTERVAL};
 
     if constexpr (USE_LIGHT_SLEEP) {
         zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
         zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(!retainedState.is_initial_startup());
         zigbee::ZDevice::get_instance()->init();
+        const auto startupMaintenance = app::AwakeReasons::startup_maintenance(retainedState.is_timer_wakeup());
+        if (startupMaintenance > std::chrono::seconds::zero()) {
+            zigbee::ZDevice::get_instance()->open_maintenance_window(startupMaintenance);
+        }
+    } else {
+        zigbee::ZDevice::get_instance()->set_device_listener(deviceListener);
+        zigbee::ZDevice::get_instance()->init();
+        const auto startupMaintenance = app::AwakeReasons::startup_maintenance(retainedState.is_timer_wakeup());
+        if (startupMaintenance > std::chrono::seconds::zero()) {
+            zigbee::ZDevice::get_instance()->open_maintenance_window(startupMaintenance);
+        }
     }
+#if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS) && defined(CONFIG_PM_ENABLE)
+    dump_pm_diagnostics();
+#endif
 
     while (true) {
+        if (!ensure_zigbee_connection()) {
+            if (wait_for_connection_during_maintenance()) {
+                retainedState.reset_outage_retry();
+            } else {
+                schedule_outage_retry(retainedState, deviceListener);
+            }
+        } else {
+            retainedState.reset_outage_retry();
+        }
+
         run_measurement_cycle(retainedState, deviceListener);
 
         if (!zigbee::ZDevice::get_instance()->has_connection()) {
-            wait_until_connected_awake();
-            continue;
+            if (wait_for_connection_during_maintenance()) {
+                retainedState.reset_outage_retry();
+                continue;
+            }
+            schedule_outage_retry(retainedState, deviceListener);
         }
 
         if constexpr (USE_LIGHT_SLEEP) {
-            wait_for_next_cycle_light_sleep();
+            wait_for_next_cycle_light_sleep(environmentalDeadline);
+#if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS) && defined(CONFIG_PM_ENABLE)
+            dump_pm_diagnostics();
+#endif
             retainedState.advance_wake_cycle();
         } else {
             schedule_next_wake_and_sleep(deviceListener);

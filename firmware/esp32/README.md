@@ -30,7 +30,18 @@ Besides multiple protocols, multiple devices are supported.
 | GPIO | Action |
 | ---- | ------ |
 | 21   | Zigbee device power mode. low - battery, high - DC |
-| 9    | Full factory reset when the XIAO BOOT button is pressed |
+| 9    | BOOT button: short press opens maintenance; continuous 10-second hold requests factory reset |
+
+A cold boot or physical RESET opens a 60-second maintenance window. While the application is
+running, a debounced BOOT press released before ten seconds extends maintenance for five minutes
+without erasing pairing or application state. A fresh, continuous ten-second BOOT hold performs a
+factory reset once; a BOOT button already held as button handling starts must first be released.
+
+For USB flashing, connect a data-capable cable and press RESET to reopen the maintenance window,
+then start the flash. If application USB is unavailable, hold BOOT, press and release RESET, then
+release BOOT to enter the ESP32-C6 ROM downloader. This ROM sequence does not run the application
+factory-reset gesture or erase Zigbee credentials. Use the stable `/dev/serial/by-id/` device path
+when selecting the flash port.
 
 #### Sensor Topology
 
@@ -117,9 +128,16 @@ The first CMake configure step also fetches the Bosch BME690 SensorAPI from its 
 # Ensure you are inside this directory
 cd firmware/esp32/
 
-# Select a debug or release build
-export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug;sdkconfig.device"
-# export IDF_SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release"
+# Select one profile. Use development for serial logging/flashing over USB:
+export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.debug;sdkconfig.device;sdkconfig.profile.development"
+# Use battery for power measurements; USB host connection will not keep the CPU awake:
+# export SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.release;sdkconfig.device;sdkconfig.profile.battery"
+
+# The development profile prevents automatic light sleep while USB is connected,
+# so its current is not representative of battery operation. The battery profile
+# permits sleep with USB attached; USB Serial/JTAG may become inaccessible while
+# the device sleeps. Press RESET to reopen maintenance, or use BOOT+RESET to enter
+# the ROM downloader if application USB is unavailable.
 
 # Select the underlying EPS hardware.
 # For the 'seed studio XIAO ESPC6' or 'Official ESP32 C6 Dev Kit':
