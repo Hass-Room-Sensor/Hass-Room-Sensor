@@ -93,8 +93,13 @@ For both modes, each measurement cycle works like this:
 2. The BME690 is sampled in forced mode, which automatically returns the sensor to sleep after the conversion.
 3. The SCD41 is sampled in single-shot mode while the current pressure from the BME690 is injected as ambient pressure compensation.
 4. Temperature and humidity are published on every cycle. Pressure and CO2 are only published when the quantized Zigbee attribute changed since the last successful report.
-5. Battery values are only published on startup, when the battery percentage changes, and once every 24 hours.
+5. Battery voltage is sampled at startup and once per hour. Values are published on startup, after a change of at least two percentage points, and once every 24 hours.
 6. The selected sleep strategy is entered until the next cycle.
+
+Scheduled reports are sent explicitly to the Home Assistant coordinator and wait for an acknowledged
+APS transmission. An attribute update alone does not count as a successful report. Failed or timed-out
+report groups leave their retained history unchanged, and OTA remains an independent awake activity
+even if network connectivity changes during the transfer.
 
 ## Home Assistant / ZHA Compatibility
 

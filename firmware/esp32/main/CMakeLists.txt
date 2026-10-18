@@ -45,6 +45,9 @@ set(hass_sensor_srcs "HassSensorMain.cpp"
                      "actuators/Led.hpp"
                      "actuators/Led.cpp"
                      "zigbee/ZigbeeDeviceState.hpp"
+                     "zigbee/StackLock.hpp"
+                     "zigbee/AttributeReport.hpp"
+                     "zigbee/PublishRequest.hpp"
                      "zigbee/ZDevice.hpp"
                      "zigbee/ZDevice.cpp")
 

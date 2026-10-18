@@ -2,10 +2,13 @@
 
 #include "app/AwakeReasons.hpp"
 #include "app/ButtonGesture.hpp"
+#include "aps/esp_zigbee_aps.h"
 #include "defs/DeviceDefs.hpp"
 #include "devices/AbstractDeviceEventListener.hpp"
 #include "models/SensorModels.hpp"
 #include "sensors/GpioInput.hpp"
+#include "zigbee/AttributeReport.hpp"
+#include "zigbee/PublishRequest.hpp"
 #include "zigbee/ZigbeeDeviceState.hpp"
 
 #ifdef CONFIG_PM_ENABLE
@@ -37,16 +40,6 @@ extern "C" {
 }
 
 namespace zigbee {
-/**
- * Wake-local publish request for one short Zigbee session.
- */
-struct PublishRequest {
-    /** Environmental attributes to publish during the current wake session. */
-    std::optional<models::QuantizedEnvironmentalReadings> environmental{};
-    /** Battery attributes to publish during the current wake session. */
-    std::optional<models::QuantizedBatteryReading> battery{};
-};
-
 /**
  * Zigbee end-device wrapper.
  *
@@ -84,8 +77,8 @@ class ZDevice {
     [[nodiscard]] bool has_explicit_maintenance() const;
     /** Waits until the device rejoins or forms a connection within the given timeout. */
     [[nodiscard]] bool wait_for_connection(std::chrono::milliseconds timeout) const;
-    /** Publishes the requested attributes into the already joined Zigbee network. */
-    void publish(const PublishRequest& request);
+    /** Sends explicit reports and waits for APS confirmations without holding the SDK lock. */
+    [[nodiscard]] PublishResult publish(const PublishRequest& request);
     /** Registers the hardware-specific listener used for LEDs and identify effects. */
     void set_device_listener(std::shared_ptr<devices::AbstractDeviceEventListener> listener);
     /**
@@ -146,6 +139,14 @@ class ZDevice {
     static constexpr EventBits_t FACTORY_NEW_BIT = BIT4;
     /** Set while no OTA transfer is running, independently of network connectivity. */
     static constexpr EventBits_t OTA_IDLE_BIT = BIT5;
+    /** Signals that the pending explicit report received an APS transmission result. */
+    static constexpr EventBits_t REPORT_DONE_BIT = BIT6;
+    /** Set along with REPORT_DONE_BIT only for a successful acknowledged transmission. */
+    static constexpr EventBits_t REPORT_SUCCESS_BIT = BIT7;
+    /** Home Assistant coordinator address used for explicit reports. */
+    static constexpr uint16_t REPORT_DESTINATION_ADDRESS = 0;
+    /** Home Automation endpoint on the Home Assistant coordinator. */
+    static constexpr uint8_t REPORT_DESTINATION_ENDPOINT = 1;
     /**
      * Supported carbon dioxide publish range in parts per million.
      *
@@ -257,6 +258,12 @@ class ZDevice {
     ZigbeeDeviceState deviceState{ZigbeeDeviceState::SETUP};
     /** Serializes awake reasons, device state, sleep permission, and PM-lock transitions. */
     mutable std::mutex powerStateMutex;
+    /** Allows one application publish operation at a time; acquired before the SDK lock. */
+    std::mutex publishMutex;
+    /** Exact outgoing frame used to correlate APS confirmations; protected by the SDK lock. */
+    std::optional<AttributeReport> pendingReport{};
+    /** Transaction sequence for explicit reports; protected by publishMutex. */
+    uint8_t reportSequence{0};
     /** Event group used to wake the main application once Zigbee reconnects. */
     EventGroupHandle_t eventGroup{nullptr};
     /** FreeRTOS timer that expires the bounded maintenance awake reason. */
@@ -316,6 +323,10 @@ class ZDevice {
     static esp_err_t on_ota_upgrade_status(const esp_zb_zcl_ota_upgrade_value_message_t* message);
     /** Handles generic ZCL default responses emitted by the Zigbee stack. */
     static esp_err_t on_default_response(const esp_zb_zcl_cmd_default_resp_message_t* message);
+    /** Receives APS confirmations and signals completion only for the pending explicit report. */
+    static void on_report_confirm(esp_zb_apsde_data_confirm_t confirmation);
+    /** Sends one frame to the Home Assistant coordinator and waits up to ten seconds for its APS ACK. */
+    [[nodiscard]] bool send_report(uint16_t cluster, const AttributeReport& report);
     /** Strips the OTA element header and validates the payload framing used by Espressif's OTA path. */
     esp_err_t on_ota_upgrade_data_message(uint32_t totalSize, void* payload, uint16_t payloadSize, void** outBuffer, uint16_t* outLength);
     /** Handles the OTA query-image response event from the server. */

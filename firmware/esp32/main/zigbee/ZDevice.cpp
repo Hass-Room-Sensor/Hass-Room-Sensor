@@ -312,32 +312,101 @@ void ZDevice::handle_can_sleep_signal() {
 #endif
 }
 
-void ZDevice::publish(const PublishRequest& request) {
-    const StackLock stackLock;
-    if (request.environmental) {
-        if (request.environmental->temperature_centi_celsius) {
-            update_temp(*request.environmental->temperature_centi_celsius);
+PublishResult ZDevice::publish(const PublishRequest& request) {
+    const std::scoped_lock publishLock(publishMutex);
+    bool co2Updated = true;
+    {
+        const StackLock stackLock;
+        if (!has_connection()) {
+            return {};
         }
-        if (request.environmental->humidity_centi_percent) {
-            update_hum(*request.environmental->humidity_centi_percent);
-        }
-        if (request.environmental->pressure_deci_kpa) {
-            update_pressure(*request.environmental->pressure_deci_kpa);
-        }
-        if (request.environmental->co2_ppm) {
-            if (update_co2(*request.environmental->co2_ppm)) {
-                set_co2_reporting_active(true);
-            } else {
-                set_co2_reporting_active(false);
+        if (request.environmental) {
+            const auto& values = *request.environmental;
+            if (values.temperature_centi_celsius) {
+                update_temp(*values.temperature_centi_celsius);
             }
-        } else {
-            set_co2_reporting_active(false);
+            if (values.humidity_centi_percent) {
+                update_hum(*values.humidity_centi_percent);
+            }
+            if (values.pressure_deci_kpa) {
+                update_pressure(*values.pressure_deci_kpa);
+            }
+            co2Updated = !values.co2_ppm || update_co2(*values.co2_ppm);
+            set_co2_reporting_active(values.co2_ppm.has_value() && co2Updated);
+        }
+        if (request.battery) {
+            update_battery(*request.battery);
         }
     }
 
-    if (request.battery) {
-        update_battery(*request.battery);
+    // Unlike an attribute update, these explicit APS frames are sent even when values are unchanged.
+    auto report = [this](uint16_t cluster, uint16_t attribute, uint8_t type, auto value) { return send_report(cluster, AttributeReport{reportSequence++, attribute, type, value}); };
+    PublishResult result{};
+    if (request.environmental) {
+        const auto& values = *request.environmental;
+        bool success = co2Updated;
+        if (values.temperature_centi_celsius) {
+            success = report(ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_S16, curTemp) && success;
+        }
+        if (values.humidity_centi_percent) {
+            success = report(ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_U16, curHum) && success;
+        }
+        if (values.pressure_deci_kpa) {
+            success = report(ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT, ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_S16, curPressure) && success;
+        }
+        if (values.co2_ppm && co2Updated) {
+            success = report(ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, ESP_ZB_ZCL_ATTR_TYPE_SINGLE, curCo2) && success;
+        }
+        result.environmental = success;
     }
+    if (request.battery) {
+        const bool voltageSent = report(ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, curBatteryMv);
+        const bool percentageSent = report(ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG, ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, ESP_ZB_ZCL_ATTR_TYPE_U8, curBatteryPercentage);
+        result.battery = voltageSent && percentageSent;
+    }
+    return result;
+}
+
+bool ZDevice::send_report(uint16_t cluster, const AttributeReport& report) {
+    {
+        const StackLock stackLock;
+        xEventGroupClearBits(eventGroup, REPORT_DONE_BIT | REPORT_SUCCESS_BIT);
+        pendingReport = report;
+        auto bytes = pendingReport->bytes();
+        esp_zb_apsde_data_req_t request{};
+        request.dst_addr_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+        request.dst_addr.addr_short = REPORT_DESTINATION_ADDRESS;
+        request.dst_endpoint = REPORT_DESTINATION_ENDPOINT;
+        request.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
+        request.cluster_id = cluster;
+        request.src_endpoint = DEFAULT_ENDPOINT_ID.endpoint;
+        request.asdu_length = bytes.size();
+        request.asdu = bytes.data();
+        request.tx_options = ESP_ZB_APSDE_TX_OPT_ACK_TX;
+        const esp_err_t error = esp_zb_aps_data_request(&request);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "Could not queue report for cluster 0x%04x: %s", cluster, esp_err_to_name(error));
+            pendingReport.reset();
+            return false;
+        }
+    }
+    // Releasing the stack lock here lets the Zigbee task deliver the APS confirmation.
+    const EventBits_t bits = xEventGroupWaitBits(eventGroup, REPORT_DONE_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(10000));
+    const StackLock stackLock;
+    pendingReport.reset();
+    const bool success = (bits & REPORT_SUCCESS_BIT) != 0;
+    if (!success) {
+        ESP_LOGW(TAG, "Report for cluster 0x%04x was not acknowledged before the deadline.", cluster);
+    }
+    return success;
+}
+
+void ZDevice::on_report_confirm(esp_zb_apsde_data_confirm_t confirmation) {
+    auto& device = self();
+    if (!device.pendingReport || confirmation.asdu == nullptr || confirmation.dst_addr_mode != ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT || confirmation.dst_addr.addr_short != REPORT_DESTINATION_ADDRESS || confirmation.dst_endpoint != REPORT_DESTINATION_ENDPOINT || confirmation.src_endpoint != DEFAULT_ENDPOINT_ID.endpoint || !device.pendingReport->matches({confirmation.asdu, confirmation.asdu_length})) {
+        return;
+    }
+    xEventGroupSetBits(device.eventGroup, REPORT_DONE_BIT | (confirmation.status == 0 ? REPORT_SUCCESS_BIT : 0));
 }
 
 void ZDevice::set_co2_reporting_active(bool active) {
@@ -524,6 +593,7 @@ void ZDevice::zb_main_task(void* /*arg*/) {
     ESP_ERROR_CHECK(esp_zb_device_register(endpointList));
     ESP_LOGD(TAG, "esp_zb_device_register.");
     esp_zb_core_action_handler_register(ZDevice::on_zb_action);
+    esp_zb_aps_data_confirm_handler_register(ZDevice::on_report_confirm);
     ESP_LOGD(TAG, "esp_zb_core_action_handler_register.");
 
     // Advertise on all 2.4 GHz channels:

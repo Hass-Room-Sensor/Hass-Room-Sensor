@@ -23,7 +23,7 @@ class RetainedState {
     /**
      * Number of five-minute wake cycles in roughly one day.
      */
-    static constexpr uint32_t BATTERY_REPORT_INTERVAL_CYCLES = 24U * 60U / WAKE_INTERVAL.count();
+    static constexpr uint32_t BATTERY_REPORT_INTERVAL_CYCLES = static_cast<uint32_t>(std::chrono::hours{24} / WAKE_INTERVAL);
 
     /**
      * Loads or initializes the RTC-retained state for the current boot.
@@ -46,6 +46,8 @@ class RetainedState {
      * sample timestamp even when the measurement backend is mocked or the values are stable.
      */
     [[nodiscard]] bool should_report_environment(const models::QuantizedEnvironmentalReadings& readings) const;
+    /** Selects fresh temperature/humidity and changed pressure/CO2 for explicit transmission. */
+    [[nodiscard]] models::QuantizedEnvironmentalReadings environment_to_report(const models::QuantizedEnvironmentalReadings& readings) const;
     /**
      * Returns true on initial startup, when the battery percentage changed, or once per day.
      */

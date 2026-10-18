@@ -56,31 +56,22 @@ bool RetainedState::is_timer_wakeup() const {
     return timerWakeup_;
 }
 
+models::QuantizedEnvironmentalReadings RetainedState::environment_to_report(const models::QuantizedEnvironmentalReadings& readings) const {
+    auto selected = readings;
+    if (!storedState_->initial_report_pending) {
+        if (selected.pressure_deci_kpa && storedState_->has_pressure && storedState_->pressure_deci_kpa == *selected.pressure_deci_kpa) {
+            selected.pressure_deci_kpa.reset();
+        }
+        if (selected.co2_ppm && storedState_->has_co2 && storedState_->co2_ppm == *selected.co2_ppm) {
+            selected.co2_ppm.reset();
+        }
+    }
+    return selected;
+}
+
 bool RetainedState::should_report_environment(const models::QuantizedEnvironmentalReadings& readings) const {
-    if (storedState_->initial_report_pending) {
-        return true;
-    }
-
-    // Temperature and humidity are refreshed every wake cycle so downstream consumers such as
-    // Home Assistant can observe a new sample even if the quantized value itself did not move.
-    if (readings.temperature_centi_celsius || readings.humidity_centi_percent) {
-        return true;
-    }
-
-    if (readings.temperature_centi_celsius && (!storedState_->has_temperature || storedState_->temperature_centi_celsius != *readings.temperature_centi_celsius)) {
-        return true;
-    }
-    if (readings.humidity_centi_percent && (!storedState_->has_humidity || storedState_->humidity_centi_percent != *readings.humidity_centi_percent)) {
-        return true;
-    }
-    if (readings.pressure_deci_kpa && (!storedState_->has_pressure || storedState_->pressure_deci_kpa != *readings.pressure_deci_kpa)) {
-        return true;
-    }
-    if (readings.co2_ppm && (!storedState_->has_co2 || storedState_->co2_ppm != *readings.co2_ppm)) {
-        return true;
-    }
-
-    return false;
+    const auto selected = environment_to_report(readings);
+    return storedState_->initial_report_pending || selected.temperature_centi_celsius || selected.humidity_centi_percent || selected.pressure_deci_kpa || selected.co2_ppm;
 }
 
 bool RetainedState::should_report_battery(const models::QuantizedBatteryReading& reading) const {

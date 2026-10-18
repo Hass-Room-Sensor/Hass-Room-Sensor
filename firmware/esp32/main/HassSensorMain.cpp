@@ -28,7 +28,6 @@
 #include <cstdio>
 #include <memory>
 #include <optional>
-#include <thread>
 
 #if defined(CONFIG_HASS_ENVIRONMENT_SENSOR_SCD41_MOCK)
 #include "sensors/Scd41Mock.hpp"
@@ -44,9 +43,6 @@ constexpr bool USE_LIGHT_SLEEP =
 #else
         false;
 #endif
-// Give the Zigbee stack a short moment to flush attribute updates before the firmware either deep
-// sleeps or resumes its long-lived light-sleep idle period.
-constexpr std::chrono::seconds SESSION_SETTLE_TIME{2};
 // Keep the device fully awake after the first successful join so Home Assistant can complete the
 // initial interview before the sleepy end device starts using automatic ESP light sleep again.
 constexpr std::chrono::minutes INITIAL_INTERVIEW_AWAKE_TIME{1};
@@ -297,7 +293,7 @@ void dump_pm_diagnostics() {
 /**
  * Executes one sensor-measurement and optional Zigbee publish cycle.
  */
-void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_ptr<devices::AbstractDeviceEventListener>& deviceListener) {
+void run_measurement_cycle(app::RetainedState& retainedState) {
     const models::EnvironmentalReadings environmentalReadings = collect_environmental_readings();
     const models::QuantizedEnvironmentalReadings quantizedEnvironmental = models::quantize(environmentalReadings);
     const std::optional<models::BatteryReading> batteryReading = retainedState.should_sample_battery() ? read_battery() : std::nullopt;
@@ -315,19 +311,18 @@ void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_
 
     zigbee::PublishRequest publishRequest{};
     if (shouldReportEnvironment) {
-        publishRequest.environmental = quantizedEnvironmental;
+        publishRequest.environmental = retainedState.environment_to_report(quantizedEnvironmental);
     }
     if (shouldReportBattery && quantizedBattery) {
         publishRequest.battery = *quantizedBattery;
     }
 
-    zigbee::ZDevice::get_instance()->publish(publishRequest);
-    std::this_thread::sleep_for(SESSION_SETTLE_TIME);
+    const zigbee::PublishResult published = zigbee::ZDevice::get_instance()->publish(publishRequest);
 
-    if (shouldReportEnvironment) {
-        retainedState.mark_environment_reported(quantizedEnvironmental);
+    if (published.environmental && publishRequest.environmental) {
+        retainedState.mark_environment_reported(*publishRequest.environmental);
     }
-    if (shouldReportBattery && quantizedBattery) {
+    if (published.battery && quantizedBattery) {
         retainedState.mark_battery_reported(*quantizedBattery);
     }
 
@@ -337,7 +332,9 @@ void run_measurement_cycle(app::RetainedState& retainedState, const std::shared_
         zigbee::ZDevice::get_instance()->set_connected_light_sleep_allowed(true);
     }
 #endif
-    retainedState.mark_startup_report_completed();
+    if (published.complete_for(publishRequest)) {
+        retainedState.mark_startup_report_completed();
+    }
 }
 } // namespace
 
@@ -382,7 +379,7 @@ void mainLoop() {
             retainedState.reset_outage_retry();
         }
 
-        run_measurement_cycle(retainedState, deviceListener);
+        run_measurement_cycle(retainedState);
 
         if (!zigbee::ZDevice::get_instance()->has_connection()) {
             if (wait_for_connection_during_maintenance()) {
