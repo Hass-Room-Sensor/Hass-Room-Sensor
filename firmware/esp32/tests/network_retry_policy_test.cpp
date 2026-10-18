@@ -5,6 +5,7 @@
 
 using namespace std::chrono_literals;
 
+/** Exercises the network retry policy behavior. */
 int main() {
     using app::NetworkRetryPolicy;
     assert(NetworkRetryPolicy::factory_new_attempt == 5min);

@@ -19,7 +19,9 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     actuators::Led greenLed;
 
     std::mutex statusLedMutex;
+    /** Restores the normal status indication when the current Identify duration expires. */
     esp_timer_handle_t identifyRestoreTimer{nullptr};
+    /** Protects the status LED from concurrent Identify and Zigbee-state updates. */
     bool identifyActive{false};
 
   public:
@@ -40,9 +42,13 @@ class SeedStudioXiaoEspC6Device : public AbstractDeviceEventListener {
     void indicate_error() override;
 
   private:
+    /** Turns off the red and green state indicators before selecting a new state pattern. */
     void reset_state_leds();
+    /** Stops the active Identify timer and blink pattern. */
     void stop_identify_effect();
+    /** Applies the LED pattern for the latest Zigbee state unless Identify is active. */
     void refresh_status_led();
+    /** Timer callback that ends Identify and restores the current Zigbee status pattern. */
     static void on_identify_restore_timer(void* arg);
 };
 } // namespace devices

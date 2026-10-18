@@ -2,6 +2,7 @@
 
 #include <cassert>
 
+/** Exercises the environmental source behavior. */
 int main() {
     const models::EnvironmentalReadings bme{.temperature_celsius = 21.5, .humidity_percent = 38.0, .pressure_hpa = 1004.0};
     const models::EnvironmentalReadings scd{.temperature_celsius = 22.0, .humidity_percent = 41.0, .co2_ppm = 812};

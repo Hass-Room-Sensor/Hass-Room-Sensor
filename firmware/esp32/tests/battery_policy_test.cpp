@@ -2,6 +2,7 @@
 
 #include <cassert>
 
+/** Exercises the battery policy behavior. */
 int main() {
     using app::BatteryPolicy;
     assert(BatteryPolicy::should_sample(0, true));

@@ -58,7 +58,9 @@ class Led {
 
   private:
     void run(std::stop_token st);
+    /** Releases a retained GPIO level before LEDC or GPIO changes the output. */
     void release_gpio_hold();
+    /** Retains the configured inactive output level across peripheral power-down. */
     void hold_gpio_off();
     void apply_off();
     void apply_on_duty();

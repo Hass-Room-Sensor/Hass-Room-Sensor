@@ -5,6 +5,7 @@
 
 using namespace std::chrono_literals;
 
+/** Exercises the periodic deadline behavior. */
 int main() {
     using Clock = app::PeriodicDeadline::Clock;
     const auto start = Clock::time_point{};
