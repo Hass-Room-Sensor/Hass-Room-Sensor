@@ -25,9 +25,9 @@ class RgbLed {
   public:
     explicit RgbLed(gpio_num_t gpio);
     RgbLed(RgbLed&&) = default;
-    RgbLed(const RgbLed&) = default;
+    RgbLed(const RgbLed&) = delete;
     RgbLed& operator=(RgbLed&&) = default;
-    RgbLed& operator=(const RgbLed&) = default;
+    RgbLed& operator=(const RgbLed&) = delete;
     ~RgbLed() = default;
 
     void init();

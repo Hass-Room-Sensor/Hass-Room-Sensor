@@ -1,0 +1,6 @@
+# IDF profiling adds light-sleep residency and PM lock timing to esp_pm_dump_locks().
+# Keep this opt-in fragment out of normal battery builds; profiling adds runtime overhead.
+CONFIG_PM_PROFILING=y
+CONFIG_HASS_ENVIRONMENT_SENSOR_PM_DIAGNOSTICS=y
+# Route stdout and ESP-IDF logs to the attached USB Serial/JTAG port for capture.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

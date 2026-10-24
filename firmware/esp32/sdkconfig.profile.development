@@ -1,0 +1,4 @@
+# Keep USB Serial/JTAG from automatically entering light sleep while a host is attached.
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# Leave peripheral power-down disabled so peripherals and USB remain easier to debug.
+# CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP is not set
