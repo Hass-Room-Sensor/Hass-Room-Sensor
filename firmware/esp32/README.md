@@ -258,12 +258,7 @@ More about this is available here: https://github.com/zigpy/zigpy/wiki/OTA-Infor
 ```bash
 # Replace 'https://hass.example.com/local/ota' with where you are going to upload your OTA binary to.
 # Usually it's '/config/www/ota' which would map to the path above.
-zigpy ota generate-index --ota-url-root="https://hass.example.com/local/ota" hass_sensor.ota > ota.json
-
-# Since the output is not perfect or directly usable by HomeAssistant, we need to modify the JSON a bit.
-file_size=$(stat -c %s "hass_sensor.ota")
-# Add the missing 'file_size' property and wrap it into 'firmwares'.
-cat ota.json | jq --argjson size "$file_size" '{firmwares: [ .[] | .file_size = $size ]}' > index.json
+zigpy ota generate-index --ota-url-root="https://hass.example.com/local/ota" hass_sensor.ota > index.json
 ```
 
 ### 5. HomeAssistant Configuration
